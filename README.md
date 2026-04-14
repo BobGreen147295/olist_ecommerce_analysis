@@ -53,3 +53,18 @@
 
 ### 6. 物流与配送分析
 - 全平台配送时长统计与分布
+
+### 7.项目结构
+olist_project/
+├── .idea/ # IDE 配置文件（可忽略）
+├── olist/ # 原始数据集文件夹
+├── analysis.ipynb # 数据分析主代码文件
+├── README.md # 项目说明文档
+├── .gitignore # Git 忽略文件配置
+└── .gitattributes # Git LFS 大文件管理配置
+
+
+## 运行方式
+1. 克隆项目
+```bash
+git clone https://github.com/BobGreen147295/olist_ecommerce_analysis.git
