@@ -51,6 +51,12 @@
 - 评估各地区预测模型性能
 - 生成销量趋势数据文件
 
+#### 3.4 RFM客户价值分析
+- 基于最近购买时间（Recency）、购买频率（Frequency）和购买金额（Monetary）三个维度评估客户价值
+- 将客户分为高价值客户、潜在高价值客户、一般价值客户和低价值客户四个群体
+- 分析每个客户群体的特征和分布
+- 生成RFM分析结果文件
+
 ## 项目结构
 ```
 olist_project/
@@ -79,7 +85,8 @@ olist_project/
 │   ├── cleaned_order_items.csv
 │   ├── user_clusters.csv          # 机器学习结果
 │   ├── purchase_predictions.csv
-│   └── sales_trends.csv
+│   ├── sales_trends.csv
+│   └── rfm_analysis.csv           # RFM分析结果
 ├── README.md                 # 项目说明文档
 └── .gitignore                # Git 忽略文件配置
 ```
@@ -108,6 +115,7 @@ olist_project/
 - `olist/user_clusters.csv` - 用户分群结果
 - `olist/purchase_predictions.csv` - 购买预测结果
 - `olist/sales_trends.csv` - 销量趋势数据
+- `olist/rfm_analysis.csv` - RFM客户价值分析结果
 
 ## 项目价值
 1. **客户洞察**：通过用户分群了解不同客户群体的行为特征
