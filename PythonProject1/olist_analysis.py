@@ -46,7 +46,8 @@ import pymysql
 import warnings
 warnings.filterwarnings("ignore")
 
-plt.rcParams["font.family"] = ["SimHei", "Microsoft YaHei"]
+# 设置中文字体
+plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "Arial"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # ====================== 连接数据库 ======================
@@ -225,6 +226,153 @@ plt.tight_layout()
 plt.savefig("D:/olist_project/PythonProject1/chart_12_月度订单趋势.png")
 plt.close()
 
+# ====================== 机器学习模块 ======================
+from sklearn.cluster import KMeans
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression, LinearRegression
+from sklearn.metrics import classification_report, mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+
+# 1. 用户分群（KMeans）
+def user_segmentation():
+    # 准备用户数据
+    user_data = pd.read_sql("""
+    SELECT c.customer_id, COUNT(o.order_id) as order_count, 
+           SUM(p.payment_value) as total_spent
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    LEFT JOIN payments p ON o.order_id = p.order_id
+    GROUP BY c.customer_id
+    """, conn)
+    
+    # 处理缺失值
+    user_data = user_data.fillna(0)
+    
+    # 特征选择
+    features = user_data[['order_count', 'total_spent']]
+    
+    # 数据标准化
+    scaler = StandardScaler()
+    scaled_features = scaler.fit_transform(features)
+    
+    # 应用KMeans聚类
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    user_data['cluster'] = kmeans.fit_predict(scaled_features)
+    
+    # 分析每个聚类的特征
+    cluster_analysis = user_data.groupby('cluster').agg({
+        'order_count': ['mean', 'count'],
+        'total_spent': 'mean'
+    }).round(2)
+    
+    print("\n用户分群分析结果：")
+    print(cluster_analysis)
+    
+    # 保存分群结果
+    user_data.to_csv("D:/olist_project/olist/user_clusters.csv", index=False)
+    print("用户分群结果已保存到 D:/olist_project/olist/user_clusters.csv")
+
+# 2. 购买预测（分类模型）
+def purchase_prediction():
+    # 准备数据
+    purchase_data = pd.read_sql("""
+    SELECT c.customer_id, 
+           COUNT(o.order_id) as order_count, 
+           SUM(p.payment_value) as total_spent,
+           MAX(YEAR(o.order_purchase_timestamp)) as last_purchase_year
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    LEFT JOIN payments p ON o.order_id = p.order_id
+    GROUP BY c.customer_id
+    """, conn)
+    
+    # 创建购买标签（是否在2018年有购买）
+    purchase_data['purchased_2018'] = (purchase_data['last_purchase_year'] == 2018).astype(int)
+    
+    # 处理缺失值
+    purchase_data = purchase_data.fillna(0)
+    
+    # 特征和标签
+    X = purchase_data[['order_count', 'total_spent']]
+    y = purchase_data['purchased_2018']
+    
+    # 数据拆分
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # 模型训练
+    model = LogisticRegression()
+    model.fit(X_train, y_train)
+    
+    # 模型评估
+    y_pred = model.predict(X_test)
+    print("\n购买预测模型评估：")
+    print(classification_report(y_test, y_pred))
+    
+    # 保存模型预测结果
+    purchase_data['prediction'] = model.predict(X)
+    purchase_data.to_csv("D:/olist_project/olist/purchase_predictions.csv", index=False)
+    print("购买预测结果已保存到 D:/olist_project/olist/purchase_predictions.csv")
+
+# 3. 销量/地区趋势预测（回归）
+def sales_trend_prediction():
+    # 准备销量数据
+    sales_data = pd.read_sql("""
+    SELECT c.customer_state, 
+           YEAR(o.order_purchase_timestamp) as year, 
+           MONTH(o.order_purchase_timestamp) as month,
+           COUNT(DISTINCT o.order_id) as order_count,
+           SUM(p.payment_value) as total_sales
+    FROM customers c
+    JOIN orders o ON c.customer_id = o.customer_id
+    JOIN payments p ON o.order_id = p.order_id
+    GROUP BY c.customer_state, YEAR(o.order_purchase_timestamp), MONTH(o.order_purchase_timestamp)
+    """, conn)
+    
+    # 处理时间特征
+    sales_data['period'] = sales_data['year'] * 12 + sales_data['month']
+    
+    # 按地区进行预测
+    states = sales_data['customer_state'].unique()
+    
+    print("\n各地区销量趋势预测：")
+    for state in states:
+        state_data = sales_data[sales_data['customer_state'] == state]
+        
+        if len(state_data) < 3:  # 数据不足，跳过
+            continue
+        
+        # 特征和标签
+        X = state_data[['period']]
+        y = state_data['total_sales']
+        
+        # 数据拆分
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # 模型训练
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+        
+        # 模型评估
+        y_pred = model.predict(X_test)
+        mse = mean_squared_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        
+        print(f"\n地区 {state}：")
+        print(f"  均方误差 (MSE): {mse:.2f}")
+        print(f"  R2 评分: {r2:.2f}")
+    
+    # 保存趋势数据
+    sales_data.to_csv("D:/olist_project/olist/sales_trends.csv", index=False)
+    print("\n销量趋势数据已保存到 D:/olist_project/olist/sales_trends.csv")
+
+# 执行机器学习模块
+print("\n=== 开始执行机器学习模块 ===")
+user_segmentation()
+purchase_prediction()
+sales_trend_prediction()
+print("\n=== 机器学习模块执行完成 ===")
+
 # ====================== 结束 ======================
 conn.close()
-print("✅ 12张图已全部保存成功！位置：D:\\olist_project\\PythonProject1\\")
+print("\n12张图已全部保存成功！位置：D:/olist_project/PythonProject1/")
+print("机器学习模块执行完成！")
