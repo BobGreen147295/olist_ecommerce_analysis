@@ -10,7 +10,8 @@
 | :--- | :--- |
 | 编程语言 | Python |
 | 数据处理 | Pandas, NumPy |
-| 数据可视化 | Matplotlib |
+| 数据可视化 | Matplotlib, Seaborn, ECharts |
+| 交互式仪表盘 | Streamlit (备用方案：HTML + ECharts) |
 | 数据库 | MySQL |
 | 机器学习 | Scikit-learn (KMeans, Logistic Regression, Linear Regression) |
 | 版本控制 | Git, GitHub |
@@ -87,14 +88,18 @@ olist_project/
 │   ├── purchase_predictions.csv
 │   ├── sales_trends.csv
 │   └── rfm_analysis.csv           # RFM分析结果
+├── dashboard.html            # HTML交互式仪表盘（推荐）
+├── dashboard.py              # Streamlit仪表盘脚本
+├── interactive_analysis.py   # Matplotlib交互式分析脚本
 ├── README.md                 # 项目说明文档
 └── .gitignore                # Git 忽略文件配置
 ```
 
 ## 如何运行
+### 1. 主分析脚本
 1. 确保安装了所需的依赖包：
    ```bash
-   pip install pandas numpy matplotlib pymysql scikit-learn
+   pip install pandas numpy matplotlib pymysql scikit-learn seaborn
    ```
 
 2. 确保 MySQL 数据库已启动，并且创建了名为 `olist_analysis` 的数据库
@@ -106,6 +111,31 @@ olist_project/
 
 4. 运行完成后，生成的图表和分析结果将保存在对应目录中
 
+### 2. 交互式仪表盘
+#### 2.1 HTML仪表盘（推荐，无需依赖）
+- 直接在浏览器中打开 `dashboard.html` 文件即可
+- 支持交互式图表和数据筛选
+
+#### 2.2 Streamlit仪表盘（需要Streamlit环境）
+1. 安装Streamlit：
+   ```bash
+   pip install streamlit
+   ```
+
+2. 运行Streamlit仪表盘：
+   ```bash
+   streamlit run dashboard.py
+   ```
+
+3. 在浏览器中访问显示的URL
+
+#### 2.3 Matplotlib交互式分析
+- 运行交互式分析脚本：
+  ```bash
+  python interactive_analysis.py
+  ```
+- 支持基本的交互功能
+
 ## 生成的文件
 ### 图表文件
 - `PythonProject1/` 目录下的 12 张图表，展示各种数据分析结果
@@ -116,6 +146,11 @@ olist_project/
 - `olist/purchase_predictions.csv` - 购买预测结果
 - `olist/sales_trends.csv` - 销量趋势数据
 - `olist/rfm_analysis.csv` - RFM客户价值分析结果
+
+### 仪表盘文件
+- `dashboard.html` - HTML交互式仪表盘（推荐）
+- `dashboard.py` - Streamlit仪表盘脚本
+- `interactive_analysis.py` - Matplotlib交互式分析脚本
 
 ## 项目价值
 1. **客户洞察**：通过用户分群了解不同客户群体的行为特征
