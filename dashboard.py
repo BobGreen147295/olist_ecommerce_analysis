@@ -68,7 +68,20 @@ orders["order_purchase_timestamp"] = pd.to_datetime(orders["order_purchase_times
 orders["month"] = orders["order_purchase_timestamp"].dt.to_period("M")
 monthly_orders = orders.groupby("month").size().reset_index(name="订单数")
 monthly_orders["month"] = monthly_orders["month"].astype(str)
-st.line_chart(monthly_orders.set_index("month"))
+
+# 使用Matplotlib绘制订单时间趋势图表
+fig, ax = plt.subplots(figsize=(12, 6))
+ax.plot(monthly_orders["month"], monthly_orders["订单数"], linewidth=2, marker='o')
+plt.xticks(rotation=45, fontsize=10)
+plt.title("订单时间趋势")
+plt.xlabel("月份")
+plt.ylabel("订单数")
+ax.ticklabel_format(style='plain', axis='y')
+# 添加数据标签
+for i, v in enumerate(monthly_orders["订单数"]):
+    ax.text(i, v + 0.02 * max(monthly_orders["订单数"]), f"{v:,}", ha='center', va='bottom', fontsize=8)
+plt.tight_layout()
+st.pyplot(fig)
 
 # 用户分群分析
 st.subheader("用户分群分析")
