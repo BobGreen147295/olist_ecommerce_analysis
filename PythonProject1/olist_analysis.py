@@ -365,11 +365,95 @@ def sales_trend_prediction():
     sales_data.to_csv("D:/olist_project/olist/sales_trends.csv", index=False)
     print("\n销量趋势数据已保存到 D:/olist_project/olist/sales_trends.csv")
 
+# 4. RFM客户价值分析
+def rfm_analysis():
+    # 准备RFM数据
+    rfm_data = pd.read_sql("""
+    SELECT c.customer_id, 
+           MAX(o.order_purchase_timestamp) as last_purchase_date,
+           COUNT(o.order_id) as frequency,
+           SUM(p.payment_value) as monetary
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    LEFT JOIN payments p ON o.order_id = p.order_id
+    GROUP BY c.customer_id
+    """, conn)
+    
+    # 计算Recency（最近一次购买到分析日期的天数）
+    analysis_date = pd.to_datetime('2018-12-31')
+    rfm_data['last_purchase_date'] = pd.to_datetime(rfm_data['last_purchase_date'])
+    rfm_data['recency'] = (analysis_date - rfm_data['last_purchase_date']).dt.days
+    
+    # 处理缺失值
+    rfm_data = rfm_data.fillna(0)
+    
+    # RFM评分（1-5分，越高越好）
+    # 使用固定分箱边界计算得分
+    rfm_data['r_score'] = pd.cut(rfm_data['recency'], 
+                                  bins=[-1, 30, 60, 90, 180, 365], 
+                                  labels=[5, 4, 3, 2, 1], 
+                                  right=False, 
+                                  include_lowest=True)
+    
+    rfm_data['f_score'] = pd.cut(rfm_data['frequency'], 
+                                  bins=[-1, 1, 2, 3, 5, 30], 
+                                  labels=[1, 2, 3, 4, 5], 
+                                  right=False, 
+                                  include_lowest=True)
+    
+    rfm_data['m_score'] = pd.cut(rfm_data['monetary'], 
+                                  bins=[-1, 100, 250, 500, 1000, 10000], 
+                                  labels=[1, 2, 3, 4, 5], 
+                                  right=False, 
+                                  include_lowest=True)
+    
+    # 转换为数值类型，处理可能的NaN值
+    rfm_data['r_score'] = rfm_data['r_score'].cat.codes.fillna(0).astype(int)
+    rfm_data['f_score'] = rfm_data['f_score'].cat.codes.fillna(0).astype(int)
+    rfm_data['m_score'] = rfm_data['m_score'].cat.codes.fillna(0).astype(int)
+    
+    # 调整得分范围为1-5
+    rfm_data['r_score'] = rfm_data['r_score'] + 1
+    rfm_data['f_score'] = rfm_data['f_score'] + 1
+    rfm_data['m_score'] = rfm_data['m_score'] + 1
+    
+    # 计算总RFM得分
+    rfm_data['rfm_score'] = rfm_data['r_score'] + rfm_data['f_score'] + rfm_data['m_score']
+    
+    # 客户分群
+    def segment_customer(row):
+        if row['rfm_score'] >= 13:
+            return '高价值客户'
+        elif row['rfm_score'] >= 10:
+            return '潜在高价值客户'
+        elif row['rfm_score'] >= 7:
+            return '一般价值客户'
+        else:
+            return '低价值客户'
+    
+    rfm_data['customer_segment'] = rfm_data.apply(segment_customer, axis=1)
+    
+    # 分析每个客户群体的特征
+    segment_analysis = rfm_data.groupby('customer_segment').agg({
+        'recency': 'mean',
+        'frequency': 'mean',
+        'monetary': 'mean',
+        'customer_id': 'count'
+    }).round(2)
+    
+    print("\nRFM客户价值分析结果：")
+    print(segment_analysis)
+    
+    # 保存RFM分析结果
+    rfm_data.to_csv("D:/olist_project/olist/rfm_analysis.csv", index=False)
+    print("RFM分析结果已保存到 D:/olist_project/olist/rfm_analysis.csv")
+
 # 执行机器学习模块
 print("\n=== 开始执行机器学习模块 ===")
 user_segmentation()
 purchase_prediction()
 sales_trend_prediction()
+rfm_analysis()
 print("\n=== 机器学习模块执行完成 ===")
 
 # ====================== 结束 ======================

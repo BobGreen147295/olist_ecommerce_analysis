@@ -110,7 +110,11 @@ def update_view(label):
         # 用户分群详细分析
         cluster_stats = user_clusters.groupby("cluster").agg({
             "customer_id": "count",
+<<<<<<< HEAD
             "total_spent": "mean",
+=======
+            "total_spend": "mean",
+>>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
             "order_count": "mean"
         }).reset_index()
         cluster_stats.columns = ["聚类", "用户数", "平均消费", "平均订单数"]
@@ -133,9 +137,15 @@ def update_view(label):
         
         # RFM详细分析
         rfm_stats = rfm_analysis.groupby("customer_segment").agg({
+<<<<<<< HEAD
             "recency": "mean",
             "frequency": "mean",
             "monetary": "mean"
+=======
+            "Recency": "mean",
+            "Frequency": "mean",
+            "Monetary": "mean"
+>>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
         }).reset_index()
         rfm_stats.columns = ["客户群体", "平均最近购买天数", "平均购买频率", "平均消费金额"]
         
