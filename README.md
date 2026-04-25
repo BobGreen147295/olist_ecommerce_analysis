@@ -14,6 +14,7 @@
 | 交互式仪表盘 | Streamlit (备用方案：HTML + ECharts) |
 | 数据库 | MySQL |
 | 机器学习 | Scikit-learn (KMeans, Logistic Regression, Linear Regression) |
+| 数据爬取 | Requests, BeautifulSoup |
 | 版本控制 | Git, GitHub |
 
 ## 数据集说明
@@ -22,6 +23,7 @@
 - 用户信息（用户 ID、用户所在地区等）
 - 支付信息（支付方式、支付期数、支付金额）
 - 商品信息（商品 ID、价格、运费等）
+- 人口数据（通过爬虫从Worldometer获取的巴西各地区人口数据）
 
 ## 项目功能模块
 ### 1. 数据清洗与预处理
@@ -35,6 +37,12 @@
 - 订单状态全流程统计与转换路径分析
 - 地区用户分布与购买力分析
 - 24小时订单量与销售额分布
+
+### 4. 爬虫功能
+- 从Worldometer网站爬取巴西各地区人口数据
+- 数据清洗与处理，确保数据质量
+- 与销售数据合并，计算人均销售额
+- 生成地区经济分析结果
 
 ### 3. 机器学习模块
 #### 3.1 用户分群（KMeans）
@@ -87,7 +95,10 @@ olist_project/
 │   ├── user_clusters.csv          # 机器学习结果
 │   ├── purchase_predictions.csv
 │   ├── sales_trends.csv
-│   └── rfm_analysis.csv           # RFM分析结果
+│   ├── rfm_analysis.csv           # RFM分析结果
+│   └── crawled_data/              # 爬虫数据
+│       ├── brazil_population.csv  # 巴西各地区人口数据
+│       └── region_analysis.csv    # 地区经济分析结果
 ├── dashboard.html            # HTML交互式仪表盘（推荐）
 ├── dashboard.py              # Streamlit仪表盘脚本
 ├── interactive_analysis.py   # Matplotlib交互式分析脚本
@@ -139,7 +150,8 @@ olist_project/
 
 ## 生成的文件
 ### 图表文件
-- `PythonProject1/` 目录下的 12 张图表，展示各种数据分析结果
+- `PythonProject1/` 目录下的 13 张图表，展示各种数据分析结果
+- 新增：`chart_13_各地区人均销售额.png` - 地区人均销售额分析图表
 
 ### 数据文件
 - `olist/cleaned_*.csv` - 清洗后的数据集
@@ -147,9 +159,12 @@ olist_project/
 - `olist/purchase_predictions.csv` - 购买预测结果
 - `olist/sales_trends.csv` - 销量趋势数据
 - `olist/rfm_analysis.csv` - RFM客户价值分析结果
+- `olist/crawled_data/brazil_population.csv` - 爬虫获取的巴西各地区人口数据
+- `olist/crawled_data/region_analysis.csv` - 地区经济分析结果
 
 ### 仪表盘文件
-- `dashboard.html` - HTML交互式仪表盘（推荐）
+- `static_dashboard.html` - 静态HTML仪表盘（推荐，无需依赖）
+- `dashboard.html` - HTML交互式仪表盘
 - `dashboard.py` - Streamlit仪表盘脚本
 - `interactive_analysis.py` - Matplotlib交互式分析脚本
 
