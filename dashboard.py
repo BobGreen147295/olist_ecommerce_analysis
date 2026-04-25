@@ -47,11 +47,7 @@ st.sidebar.header("筛选条件")
 region = st.sidebar.selectbox("选择地区", ["全部"] + sorted(customers["customer_state"].unique()))
 
 # 主内容区
-<<<<<<< HEAD
 col1, col2, col3 = st.columns([1, 1.5, 1])  # 增加中间列的宽度
-=======
-col1, col2, col3 = st.columns(3)
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 
 # 关键指标卡片
 with col1:
@@ -95,37 +91,25 @@ cluster_counts.columns = ["聚类", "用户数"]
 # 计算每个聚类的平均消费
 cluster_stats = user_clusters.groupby("cluster").agg({
     "customer_id": "count",
-<<<<<<< HEAD
     "total_spent": "mean",
-        "order_count": "mean"
-=======
-    "total_spend": "mean",
     "order_count": "mean"
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 }).reset_index()
 cluster_stats.columns = ["聚类", "用户数", "平均消费", "平均订单数"]
 
 # 显示聚类统计
-<<<<<<< HEAD
 # 设置数字格式，确保显示具体准确的数字
 st.dataframe(cluster_stats.style.format({
     "用户数": "{:,.0f}",
     "平均消费": "{:,.2f}",
     "平均订单数": "{:,.2f}"
 }))
-=======
-st.dataframe(cluster_stats)
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 
 # 聚类分布图表
 fig, ax = plt.subplots()
 sns.barplot(x="聚类", y="用户数", data=cluster_counts, ax=ax)
 plt.title("用户聚类分布")
-<<<<<<< HEAD
 # 添加数据标签
 add_value_labels(ax)
-=======
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 st.pyplot(fig)
 
 # RFM客户价值分析
@@ -133,7 +117,6 @@ st.subheader("RFM客户价值分析")
 rfm_counts = rfm_analysis["customer_segment"].value_counts().reset_index()
 rfm_counts.columns = ["客户群体", "数量"]
 
-<<<<<<< HEAD
 # 计算RFM统计
 rfm_stats = rfm_analysis.groupby("customer_segment").agg({
     "customer_id": "count",
@@ -151,30 +134,14 @@ st.dataframe(rfm_stats.style.format({
     "平均购买频次": "{:,.2f}",
     "平均消费金额": "{:,.2f}"
 }))
-=======
-# 计算每个客户群体的平均价值
-rfm_stats = rfm_analysis.groupby("customer_segment").agg({
-    "customer_id": "count",
-    "Recency": "mean",
-    "Frequency": "mean",
-    "Monetary": "mean"
-}).reset_index()
-rfm_stats.columns = ["客户群体", "数量", "平均最近购买天数", "平均购买频率", "平均消费金额"]
-
-# 显示RFM统计
-st.dataframe(rfm_stats)
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 
 # RFM分布图表
 fig, ax = plt.subplots()
 sns.barplot(x="客户群体", y="数量", data=rfm_counts, ax=ax)
 plt.xticks(rotation=45)
 plt.title("客户价值分布")
-<<<<<<< HEAD
 # 添加数据标签
 add_value_labels(ax)
-=======
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 st.pyplot(fig)
 
 # 地区销量分布
@@ -182,16 +149,12 @@ st.subheader("地区销量分布")
 if region == "全部":
     region_sales = order_items.merge(orders, on="order_id").merge(customers, on="customer_id")
     region_sales = region_sales.groupby("customer_state")["price"].sum().reset_index()
-<<<<<<< HEAD
     # 只显示前10个销量最高的地区
     region_sales = region_sales.sort_values("price", ascending=False).head(10)
-=======
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 else:
     region_sales = order_items.merge(orders, on="order_id").merge(customers, on="customer_id")
     region_sales = region_sales[region_sales["customer_state"] == region].groupby("customer_state")["price"].sum().reset_index()
 
-<<<<<<< HEAD
 # 重命名列名
 region_sales.columns = ["地区", "销售额"]
 
@@ -214,15 +177,6 @@ ax.set_yticklabels([f"{int(y):,}" for y in ax.get_yticks()])
 # 添加数据标签，使用两位小数格式，调整字体大小
 for i, v in enumerate(region_sales["销售额"]):
     ax.text(i, v + 0.02 * max(region_sales["销售额"]), f"{v:,.2f}", ha='center', va='bottom', fontsize=9)
-=======
-# 地区销量图表
-fig, ax = plt.subplots(figsize=(12, 6))
-sns.barplot(x="customer_state", y="price", data=region_sales, ax=ax)
-plt.xticks(rotation=45)
-plt.title("地区销量分布")
-plt.xlabel("地区")
-plt.ylabel("销售额")
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 st.pyplot(fig)
 
 # 支付方式分析
@@ -230,29 +184,21 @@ st.subheader("支付方式分析")
 payment_type_counts = payments["payment_type"].value_counts().reset_index()
 payment_type_counts.columns = ["支付方式", "次数"]
 
-<<<<<<< HEAD
 # 显示支付方式分布数据
 st.dataframe(payment_type_counts.style.format({
     "次数": "{:,.0f}"
 }))
-
-=======
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 # 支付方式图表
 fig, ax = plt.subplots()
 sns.barplot(x="支付方式", y="次数", data=payment_type_counts, ax=ax)
 plt.xticks(rotation=45)
 plt.title("支付方式分布")
-<<<<<<< HEAD
 # 添加数据标签
 add_value_labels(ax)
-=======
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
 st.pyplot(fig)
 
 # 销量趋势预测
 st.subheader("销量趋势预测")
-<<<<<<< HEAD
 if len(sales_trends) > 0:
     # 计算每个地区的总销量，按销量排序
     region_totals = sales_trends.groupby("customer_state")["total_sales"].sum().reset_index()
@@ -314,22 +260,6 @@ if len(sales_trends) > 0:
     ax.set_ylim(bottom=0)
     plt.legend(loc='upper right', fontsize=10)
     plt.tight_layout()
-=======
-# 显示前10个地区的销量趋势
-if len(sales_trends) > 0:
-    top_regions = sales_trends["region"].value_counts().head(10).index.tolist()
-    filtered_trends = sales_trends[sales_trends["region"].isin(top_regions)]
-    
-    fig, ax = plt.subplots(figsize=(12, 6))
-    for region in top_regions:
-        region_data = filtered_trends[filtered_trends["region"] == region]
-        ax.plot(region_data["month"], region_data["sales"], label=region)
-    plt.xticks(rotation=45)
-    plt.title("地区销量趋势")
-    plt.xlabel("月份")
-    plt.ylabel("销量")
-    plt.legend()
->>>>>>> 7f955359891447f7fc5052608088d68d044c1ff5
     st.pyplot(fig)
 
 # 项目信息
