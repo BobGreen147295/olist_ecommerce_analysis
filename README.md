@@ -112,9 +112,10 @@ olist_project/
 4. 运行完成后，生成的图表和分析结果将保存在对应目录中
 
 ### 2. 交互式仪表盘
-#### 2.1 HTML仪表盘（推荐，无需依赖）
-- 直接在浏览器中打开 `dashboard.html` 文件即可
+#### 2.1 静态HTML仪表盘（推荐，无需依赖）
+- 直接在浏览器中打开 `static_dashboard.html` 文件即可
 - 支持交互式图表和数据筛选
+- 包含所有分析结果和图表
 
 #### 2.2 Streamlit仪表盘（需要Streamlit环境）
 1. 安装Streamlit：
