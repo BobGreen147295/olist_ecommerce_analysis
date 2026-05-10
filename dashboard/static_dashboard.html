@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Olist电商数据分析仪表盘</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: Arial, sans-serif;
+        }
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background-color: #343a40;
+            color: white;
+            font-weight: bold;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+        .table-responsive {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <h1 class="text-center mb-4">Olist电商数据分析仪表盘</h1>
+        
+        <!-- 关键指标卡片 -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">总订单数</div>
+                    <div class="card-body text-center">
+                        <h2>99,441</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">总销售额</div>
+                    <div class="card-body text-center">
+                        <h2>R$13,591,643.70</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">总用户数</div>
+                    <div class="card-body text-center">
+                        <h2>99,441</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 订单时间趋势 -->
+        <div class="card">
+            <div class="card-header">订单时间趋势</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="orderTrendChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 用户分群分析 -->
+        <div class="card">
+            <div class="card-header">用户分群分析</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <canvas id="userClusterChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>聚类</th>
+                                        <th>用户数</th>
+                                        <th>平均消费</th>
+                                        <th>平均订单数</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>0</td>
+                                        <td>98,737</td>
+                                        <td>134.67</td>
+                                        <td>1.00</td>
+                                    </tr>
+                                    <tr>
+                                        <td>1</td>
+                                        <td>678</td>
+                                        <td>1,032.71</td>
+                                        <td>1.01</td>
+                                    </tr>
+                                    <tr>
+                                        <td>2</td>
+                                        <td>26</td>
+                                        <td>1,017.69</td>
+                                        <td>6.28</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- RFM客户价值分析 -->
+        <div class="card">
+            <div class="card-header">RFM客户价值分析</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <canvas id="rfmChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>客户群体</th>
+                                        <th>用户数</th>
+                                        <th>平均最近购买天数</th>
+                                        <th>平均购买频次</th>
+                                        <th>平均消费金额</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>高价值客户</td>
+                                        <td>32</td>
+                                        <td>15.41</td>
+                                        <td>2.13</td>
+                                        <td>1,085.34</td>
+                                    </tr>
+                                    <tr>
+                                        <td>一般价值客户</td>
+                                        <td>98,984</td>
+                                        <td>134.71</td>
+                                        <td>1.00</td>
+                                        <td>134.41</td>
+                                    </tr>
+                                    <tr>
+                                        <td>低价值客户</td>
+                                        <td>425</td>
+                                        <td>235.62</td>
+                                        <td>1.00</td>
+                                        <td>135.47</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 地区销量分布 -->
+        <div class="card">
+            <div class="card-header">地区销量分布（TOP10）</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="regionSalesChart"></canvas>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>地区</th>
+                                <th>销售额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>SP</td>
+                                <td>R$5,202,955.05</td>
+                            </tr>
+                            <tr>
+                                <td>RJ</td>
+                                <td>R$1,824,092.67</td>
+                            </tr>
+                            <tr>
+                                <td>MG</td>
+                                <td>R$1,585,308.03</td>
+                            </tr>
+                            <tr>
+                                <td>RS</td>
+                                <td>R$683,083.76</td>
+                            </tr>
+                            <tr>
+                                <td>PR</td>
+                                <td>R$750,304.02</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 支付方式分析 -->
+        <div class="card">
+            <div class="card-header">支付方式分析</div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <canvas id="paymentChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>支付方式</th>
+                                        <th>次数</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>credit_card</td>
+                                        <td>76,795</td>
+                                    </tr>
+                                    <tr>
+                                        <td>boleto</td>
+                                        <td>19,784</td>
+                                    </tr>
+                                    <tr>
+                                        <td>voucher</td>
+                                        <td>1,415</td>
+                                    </tr>
+                                    <tr>
+                                        <td>debit_card</td>
+                                        <td>1,228</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 地区人均销售额分析 -->
+        <div class="card">
+            <div class="card-header">地区人均销售额分析</div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="perCapitaSalesChart"></canvas>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>地区</th>
+                                <th>销售额</th>
+                                <th>人口</th>
+                                <th>人均销售额（每百万人）</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>SP</td>
+                                <td>R$5,202,955.05</td>
+                                <td>46,649,132</td>
+                                <td>R$11,153.43</td>
+                            </tr>
+                            <tr>
+                                <td>RJ</td>
+                                <td>R$1,824,092.67</td>
+                                <td>17,463,349</td>
+                                <td>R$10,445.28</td>
+                            </tr>
+                            <tr>
+                                <td>MG</td>
+                                <td>R$1,585,308.03</td>
+                                <td>21,168,791</td>
+                                <td>R$7,490.47</td>
+                            </tr>
+                            <tr>
+                                <td>RS</td>
+                                <td>R$683,083.76</td>
+                                <td>11,377,239</td>
+                                <td>R$6,003.97</td>
+                            </tr>
+                            <tr>
+                                <td>PR</td>
+                                <td>R$750,304.02</td>
+                                <td>11,433,957</td>
+                                <td>R$6,561.94</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 项目信息 -->
+        <div class="card mt-4">
+            <div class="card-header">项目信息</div>
+            <div class="card-body">
+                <ul class="list-group">
+                    <li class="list-group-item"><strong>项目名称</strong>: Olist电商数据分析</li>
+                    <li class="list-group-item"><strong>技术栈</strong>: Python, Pandas, Matplotlib, Scikit-learn, 爬虫</li>
+                    <li class="list-group-item"><strong>数据来源</strong>: Olist电商平台公开数据集 + 爬虫获取的人口数据</li>
+                    <li class="list-group-item"><strong>分析维度</strong>: 用户行为、销售趋势、客户价值、地区经济分析</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 订单时间趋势图表
+        const orderTrendCtx = document.getElementById('orderTrendChart').getContext('2d');
+        const orderTrendChart = new Chart(orderTrendCtx, {
+            type: 'line',
+            data: {
+                labels: ['2016-09', '2016-10', '2016-12', '2017-01', '2017-02', '2017-03', '2017-04', '2017-05', '2017-06', '2017-07', '2017-08', '2017-09', '2017-10', '2017-11', '2017-12', '2018-01', '2018-02', '2018-03', '2018-04', '2018-05', '2018-06', '2018-07', '2018-08', '2018-09', '2018-10'],
+                datasets: [{
+                    label: '订单数',
+                    data: [12, 35, 185, 1780, 1746, 2225, 2829, 2633, 2750, 2765, 3278, 3239, 3679, 4112, 4999, 3863, 3872, 4074, 4118, 3931, 3835, 3664, 3511, 3428, 1271],
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '订单时间趋势'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        
+        // 用户聚类分布图表
+        const userClusterCtx = document.getElementById('userClusterChart').getContext('2d');
+        const userClusterChart = new Chart(userClusterCtx, {
+            type: 'bar',
+            data: {
+                labels: ['0', '1', '2'],
+                datasets: [{
+                    label: '用户数',
+                    data: [98737, 678, 26],
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.6)',
+                        'rgba(54, 162, 235, 0.6)',
+                        'rgba(255, 206, 86, 0.6)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '用户聚类分布'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        
+        // RFM客户价值分布图表
+        const rfmCtx = document.getElementById('rfmChart').getContext('2d');
+        const rfmChart = new Chart(rfmCtx, {
+            type: 'bar',
+            data: {
+                labels: ['高价值客户', '一般价值客户', '低价值客户'],
+                datasets: [{
+                    label: '数量',
+                    data: [32, 98984, 425],
+                    backgroundColor: [
+                        'rgba(75, 192, 192, 0.6)',
+                        'rgba(54, 162, 235, 0.6)',
+                        'rgba(255, 99, 132, 0.6)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '客户价值分布'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        
+        // 地区销量分布图表
+        const regionSalesCtx = document.getElementById('regionSalesChart').getContext('2d');
+        const regionSalesChart = new Chart(regionSalesCtx, {
+            type: 'bar',
+            data: {
+                labels: ['SP', 'RJ', 'MG', 'PR', 'RS', 'BA', 'SC', 'DF', 'GO', 'ES'],
+                datasets: [{
+                    label: '销售额',
+                    data: [5202955.05, 1824092.67, 1585308.03, 750304.02, 683083.76, 620553.34, 56920.85, 49621.74, 34940.97, 28712.39],
+                    backgroundColor: 'rgba(255, 159, 64, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '地区销量分布（TOP10）'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'R$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // 支付方式分布图表
+        const paymentCtx = document.getElementById('paymentChart').getContext('2d');
+        const paymentChart = new Chart(paymentCtx, {
+            type: 'bar',
+            data: {
+                labels: ['credit_card', 'boleto', 'voucher', 'debit_card'],
+                datasets: [{
+                    label: '次数',
+                    data: [76795, 19784, 1415, 1228],
+                    backgroundColor: 'rgba(153, 102, 255, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '支付方式分布'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        
+        // 地区人均销售额图表
+        const perCapitaSalesCtx = document.getElementById('perCapitaSalesChart').getContext('2d');
+        const perCapitaSalesChart = new Chart(perCapitaSalesCtx, {
+            type: 'bar',
+            data: {
+                labels: ['SP', 'RJ', 'MG', 'PR', 'RS', 'BA', 'SC', 'DF', 'GO', 'ES'],
+                datasets: [{
+                    label: '人均销售额（每百万人）',
+                    data: [11153.43, 10445.28, 7490.47, 6561.94, 6003.97, 4140.87, 7756.68, 16242.63, 4848.47, 7223.89],
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '巴西各地区人均销售额（每百万人）'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'R$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
