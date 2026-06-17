@@ -1,501 +1,246 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Olist电商数据分析仪表盘</title>
-    <link href="https://cdn.jsdelivr.net/npm/antd@5.12.8/dist/reset.css" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Microsoft YaHei', Arial, sans-serif;
-            background-color: #f0f2f5;
-            margin: 0;
-            padding: 0;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            color: #1890ff;
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-        .header p {
-            color: #666;
-            font-size: 16px;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .stat-number {
-            font-size: 24px;
-            font-weight: bold;
-            color: #1890ff;
-            margin-bottom: 5px;
-        }
-        .stat-label {
-            font-size: 14px;
-            color: #666;
-        }
-        .charts-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .chart-card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .chart-card h3 {
-            margin-top: 0;
-            margin-bottom: 20px;
-            color: #333;
-            font-size: 16px;
-        }
-        .chart-container {
-            width: 100%;
-            height: 300px;
-        }
-        .full-width {
-            grid-column: 1 / -1;
-        }
-        .tab-container {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }
-        .tabs {
-            display: flex;
-            margin-bottom: 20px;
-            border-bottom: 1px solid #e8e8e8;
-        }
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.3s;
-        }
-        .tab.active {
-            color: #1890ff;
-            border-bottom-color: #1890ff;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 电商运营增长分析助手</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      color: #1f2937;
+      background: #f5f7fb;
+    }
+    .page { max-width: 1280px; margin: 0 auto; padding: 28px; }
+    .hero {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 26px 28px;
+      margin-bottom: 20px;
+    }
+    .hero h1 { margin: 0 0 10px; font-size: 30px; color: #0f172a; }
+    .hero p { margin: 0; color: #64748b; font-size: 15px; line-height: 1.8; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .badge {
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: #eef6ff;
+      color: #075985;
+      font-size: 13px;
+      border: 1px solid #cfe8ff;
+    }
+    .grid { display: grid; gap: 16px; }
+    .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 20px; }
+    .two-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 20px; }
+    .card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 18px;
+    }
+    .kpi-label { color: #64748b; font-size: 13px; margin-bottom: 8px; }
+    .kpi-value { font-size: 24px; font-weight: 700; color: #111827; }
+    .kpi-note { color: #6b7280; font-size: 12px; margin-top: 8px; }
+    h2 { margin: 0 0 14px; font-size: 18px; color: #111827; }
+    h3 { margin: 0 0 10px; font-size: 16px; color: #111827; }
+    .chart { width: 100%; height: 330px; }
+    .chart.tall { height: 390px; }
+    .insight-list { margin: 0; padding-left: 18px; line-height: 1.9; color: #374151; }
+    .strategy-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .strategy {
+      border-left: 4px solid #2563eb;
+      background: #f8fafc;
+      padding: 14px;
+      border-radius: 6px;
+      min-height: 142px;
+    }
+    .strategy:nth-child(2) { border-left-color: #16a34a; }
+    .strategy:nth-child(3) { border-left-color: #f97316; }
+    .strategy p { margin: 0; color: #4b5563; line-height: 1.7; font-size: 14px; }
+    .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .table th, .table td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+    .table th { color: #475569; background: #f8fafc; }
+    @media (max-width: 900px) {
+      .kpi-grid, .two-grid, .strategy-grid { grid-template-columns: 1fr; }
+      .page { padding: 16px; }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Olist电商数据分析仪表盘</h1>
-            <p>基于巴西Olist真实电商数据集的全流程分析</p>
+  <main class="page">
+    <section class="hero">
+      <h1>AI 电商运营增长分析助手</h1>
+      <p>基于 Olist 真实电商订单数据，自动完成数据清洗、经营指标监控、用户价值分层、地区销售分析和趋势预测，并输出可执行的运营策略建议。</p>
+      <div class="badge-row">
+        <span class="badge">Python 自动化清洗</span>
+        <span class="badge">RFM 客户价值分析</span>
+        <span class="badge">KMeans 用户分群</span>
+        <span class="badge">销售趋势预测</span>
+        <span class="badge">运营策略生成</span>
+      </div>
+    </section>
+
+    <section class="grid kpi-grid">
+      <div class="card">
+        <div class="kpi-label">总订单数</div>
+        <div class="kpi-value">99,441</div>
+        <div class="kpi-note">用于监控业务规模和增长节奏</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">总销售额</div>
+        <div class="kpi-value">R$16,008,872.12</div>
+        <div class="kpi-note">按支付金额口径统计</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">客户数</div>
+        <div class="kpi-value">99,441</div>
+        <div class="kpi-note">覆盖全量交易客户</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">平均客单价</div>
+        <div class="kpi-value">R$160.99</div>
+        <div class="kpi-note">辅助判断促销和组合销售空间</div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:20px;">
+      <h2>AI 运营摘要</h2>
+      <ul class="insight-list">
+        <li>销售集中在 <strong>SP、RJ、MG</strong> 等核心地区，适合优先配置广告预算、活动资源和仓配能力。</li>
+        <li><strong>credit_card</strong> 是主要支付方式，占比约 <strong>73.9%</strong>，可围绕支付优惠、分期免息和支付链路优化提升转化。</li>
+        <li>高价值客户约 <strong>12,032</strong> 人，占比 <strong>12.1%</strong>；潜在高价值客户约 <strong>36,989</strong> 人，占比 <strong>37.2%</strong>，适合分层触达。</li>
+      </ul>
+    </section>
+
+    <section class="grid two-grid">
+      <div class="card">
+        <h2>月度订单趋势</h2>
+        <div id="monthlyChart" class="chart tall"></div>
+      </div>
+      <div class="card">
+        <h2>支付方式结构</h2>
+        <div id="paymentChart" class="chart tall"></div>
+      </div>
+    </section>
+
+    <section class="grid two-grid">
+      <div class="card">
+        <h2>地区销售 TOP10</h2>
+        <div id="regionChart" class="chart"></div>
+      </div>
+      <div class="card">
+        <h2>重点地区销售趋势</h2>
+        <div id="regionTrendChart" class="chart"></div>
+      </div>
+    </section>
+
+    <section class="grid two-grid">
+      <div class="card">
+        <h2>RFM 客户价值分层</h2>
+        <div id="rfmChart" class="chart"></div>
+      </div>
+      <div class="card">
+        <h2>各客群平均消费</h2>
+        <div id="rfmSpendChart" class="chart"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:20px;">
+      <h2>用户聚类结果</h2>
+      <table class="table">
+        <thead>
+          <tr><th>聚类</th><th>平均消费</th><th>平均订单数</th><th>运营理解</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>客群 0</td><td>R$2,551.94</td><td>4.99</td><td>用于识别不同消费能力和购买频次的人群，支持差异化投放。</td></tr><tr><td>客群 1</td><td>R$2,550.71</td><td>5.01</td><td>用于识别不同消费能力和购买频次的人群，支持差异化投放。</td></tr><tr><td>客群 2</td><td>R$2,557.37</td><td>4.99</td><td>用于识别不同消费能力和购买频次的人群，支持差异化投放。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>AI 策略建议</h2>
+      <div class="grid strategy-grid">
+        <div class="strategy">
+          <h3>高价值客户：提升复购</h3>
+          <p>建立会员权益、专属优惠券和新品优先购机制，用较低触达成本稳定复购和客单价。</p>
         </div>
-
-        <!-- 关键指标卡片 -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-number">99,441</div>
-                <div class="stat-label">总订单数</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">R$13,591,643.70</div>
-                <div class="stat-label">总销售额</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">99,441</div>
-                <div class="stat-label">总用户数</div>
-            </div>
+        <div class="strategy">
+          <h3>潜在高价值客户：重点转化</h3>
+          <p>针对近期购买但金额尚未释放的客户，推送满减券、关联推荐和限时活动，提高二次购买率。</p>
         </div>
-
-        <!-- 支付方式分布 -->
-        <div class="charts-grid">
-            <div class="chart-card">
-                <h3>支付方式分布</h3>
-                <div id="paymentChart" class="chart-container"></div>
-            </div>
-            <div class="chart-card">
-                <h3>用户聚类分布</h3>
-                <div id="clusterChart" class="chart-container"></div>
-            </div>
+        <div class="strategy">
+          <h3>低价值客户：控制补贴</h3>
+          <p>使用低成本触达和自动化内容运营，减少高额补贴，把预算更多投向高确定性人群。</p>
         </div>
+      </div>
+    </section>
+  </main>
 
-        <!-- 订单趋势 -->
-        <div class="chart-card full-width">
-            <h3>月度订单趋势</h3>
-            <div id="trendChart" class="chart-container" style="height: 400px;"></div>
-        </div>
+  <script>
+    const data = {"payment": {"credit_card": 76795, "boleto": 19784, "voucher": 5769, "debit_card": 1529}, "monthly": {"2016-09": 4, "2016-10": 324, "2016-12": 1, "2017-01": 800, "2017-02": 1780, "2017-03": 2682, "2017-04": 2404, "2017-05": 3700, "2017-06": 3245, "2017-07": 4026, "2017-08": 4331, "2017-09": 4285, "2017-10": 4631, "2017-11": 7544, "2017-12": 5673, "2018-01": 7269, "2018-02": 6728, "2018-03": 7211, "2018-04": 6939, "2018-05": 6873, "2018-06": 6167, "2018-07": 6292, "2018-08": 6512, "2018-09": 16, "2018-10": 4}, "regions": {"SP": 5202955.05, "RJ": 1824092.67, "MG": 1585308.03, "RS": 750304.02, "PR": 683083.76, "SC": 520553.34, "BA": 511349.99, "DF": 302603.94, "GO": 294591.95, "ES": 275037.31}, "rfm": {"一般价值": 37374, "潜在高价值": 36989, "低价值": 13046, "高价值": 12032}, "rfmSpend": {"高价值": 3898.94, "潜在高价值": 2700.88, "一般价值": 2383.39, "低价值": 1187.11}, "clusters": {"0": 33231, "1": 33272, "2": 32938}, "trendMonths": ["2018-01", "2018-02", "2018-03", "2018-04", "2018-05", "2018-06", "2018-07", "2018-08", "2018-09", "2018-10", "2018-11", "2018-12"], "regionTrends": [{"name": "SP", "data": [1433.0, 1516.0, 1833.0, 1835.0, 2004.0, 2128.0, 2307.0, 2203.0, 1394.0, 1984.0, 1973.0, 2263.0]}, {"name": "RJ", "data": [1670.0, 2122.0, 2260.0, 2552.0, 2732.0, 2433.0, 2830.0, 2177.0, 2077.0, 2479.0, 2823.0, 3040.0]}, {"name": "MG", "data": [1555.0, 2096.0, 1751.0, 2418.0, 2337.0, 2270.0, 2452.0, 2272.0, 2191.0, 2136.0, 2200.0, 2367.0]}]};
+    const moneyFmt = value => "R$" + Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-        <!-- 标签页内容 -->
-        <div class="tab-container">
-            <div class="tabs">
-                <div class="tab active" data-tab="userCluster">用户分群分析</div>
-                <div class="tab" data-tab="rfm">RFM客户价值分析</div>
-                <div class="tab" data-tab="region">地区销量分析</div>
-            </div>
+    function makeBarData(obj) {
+      return Object.entries(obj).map(([name, value]) => ({ name, value }));
+    }
 
-            <div class="tab-content active" id="userCluster">
-                <div class="charts-grid">
-                    <div class="chart-card">
-                        <h3>各聚类平均消费</h3>
-                        <div id="clusterSpendChart" class="chart-container"></div>
-                    </div>
-                    <div class="chart-card">
-                        <h3>各聚类平均订单数</h3>
-                        <div id="clusterOrderChart" class="chart-container"></div>
-                    </div>
-                </div>
-            </div>
+    const monthlyChart = echarts.init(document.getElementById("monthlyChart"));
+    monthlyChart.setOption({
+      tooltip: { trigger: "axis" },
+      grid: { left: 48, right: 18, top: 32, bottom: 70 },
+      xAxis: { type: "category", data: Object.keys(data.monthly), axisLabel: { rotate: 45 } },
+      yAxis: { type: "value" },
+      series: [{ type: "line", smooth: true, areaStyle: {}, data: Object.values(data.monthly), color: "#2563eb" }]
+    });
 
-            <div class="tab-content" id="rfm">
-                <div class="charts-grid">
-                    <div class="chart-card">
-                        <h3>客户价值分布</h3>
-                        <div id="rfmChart" class="chart-container"></div>
-                    </div>
-                    <div class="chart-card">
-                        <h3>各群体平均消费金额</h3>
-                        <div id="rfmSpendChart" class="chart-container"></div>
-                    </div>
-                </div>
-            </div>
+    const paymentChart = echarts.init(document.getElementById("paymentChart"));
+    paymentChart.setOption({
+      tooltip: { trigger: "item" },
+      legend: { bottom: 0 },
+      series: [{ type: "pie", radius: ["42%", "68%"], data: makeBarData(data.payment) }]
+    });
 
-            <div class="tab-content" id="region">
-                <div class="charts-grid">
-                    <div class="chart-card">
-                        <h3>地区销量TOP10</h3>
-                        <div id="regionChart" class="chart-container"></div>
-                    </div>
-                    <div class="chart-card">
-                        <h3>地区销量趋势</h3>
-                        <div id="regionTrendChart" class="chart-container"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    const regionChart = echarts.init(document.getElementById("regionChart"));
+    regionChart.setOption({
+      tooltip: { trigger: "axis", valueFormatter: moneyFmt },
+      grid: { left: 72, right: 18, top: 24, bottom: 42 },
+      xAxis: { type: "category", data: Object.keys(data.regions) },
+      yAxis: { type: "value", axisLabel: { formatter: value => (value / 1000000).toFixed(1) + "M" } },
+      series: [{ type: "bar", data: Object.values(data.regions), color: "#16a34a" }]
+    });
 
-    <script>
-        // 数据
-        const paymentData = {"credit_card": 76795, "boleto": 19784, "voucher": 5769, "debit_card": 1529};
-        const clusterData = {"1": 33272, "0": 33231, "2": 32938};
-        const clusterSpendData = {"0": 2551.9368663132764, "1": 2550.7099564671594, "2": 2557.3671672296896};
-        const clusterOrderData = {"0": 4.993740784207517, "1": 5.008265207982688, "2": 4.99207602161637};
-        const rfmData = {"\u4e00\u822c\u4ef7\u503c": 37374, "\u6f5c\u5728\u9ad8\u4ef7\u503c": 36989, "\u4f4e\u4ef7\u503c": 13046, "\u9ad8\u4ef7\u503c": 12032};
-        const rfmSpendData = {"\u4e00\u822c\u4ef7\u503c": 2383.390498672386, "\u4f4e\u4ef7\u503c": 1187.1115445162084, "\u6f5c\u5728\u9ad8\u4ef7\u503c": 2700.8829460999045, "\u9ad8\u4ef7\u503c": 3898.9361700940212};
-        const regionData = {"SP": 5202955.050001498, "RJ": 1824092.669999808, "MG": 1585308.029999873, "RS": 750304.0200000231, "PR": 683083.7600000206, "SC": 520553.3400000074, "BA": 511349.9900000073, "DF": 302603.9399999978, "GO": 294591.9499999972, "ES": 275037.30999999633};
-        const monthlyData = {"2016-09": 4, "2016-10": 324, "2016-12": 1, "2017-01": 800, "2017-02": 1780, "2017-03": 2682, "2017-04": 2404, "2017-05": 3700, "2017-06": 3245, "2017-07": 4026, "2017-08": 4331, "2017-09": 4285, "2017-10": 4631, "2017-11": 7544, "2017-12": 5673, "2018-01": 7269, "2018-02": 6728, "2018-03": 7211, "2018-04": 6939, "2018-05": 6873, "2018-06": 6167, "2018-07": 6292, "2018-08": 6512, "2018-09": 16, "2018-10": 4};
-        const regionTrendData = [{"name": "SP", "data": [1433, 1516, 1833, 1835, 2004, 2128, 2307, 2203, 1394, 1984, 1973, 2263]}, {"name": "RJ", "data": [1670, 2122, 2260, 2552, 2732, 2433, 2830, 2177, 2077, 2479, 2823, 3040]}, {"name": "MG", "data": [1555, 2096, 1751, 2418, 2337, 2270, 2452, 2272, 2191, 2136, 2200, 2367]}];
-        const months = ["2018-01", "2018-02", "2018-03", "2018-04", "2018-05", "2018-06", "2018-07", "2018-08", "2018-09", "2018-10", "2018-11", "2018-12"];
+    const regionTrendChart = echarts.init(document.getElementById("regionTrendChart"));
+    regionTrendChart.setOption({
+      tooltip: { trigger: "axis", valueFormatter: moneyFmt },
+      legend: { top: 0 },
+      grid: { left: 72, right: 18, top: 36, bottom: 50 },
+      xAxis: { type: "category", data: data.trendMonths, axisLabel: { rotate: 40 } },
+      yAxis: { type: "value", axisLabel: { formatter: value => (value / 1000).toFixed(0) + "k" } },
+      series: data.regionTrends.map(item => ({ name: item.name, type: "line", smooth: true, data: item.data }))
+    });
 
-        // 初始化图表
-        document.addEventListener('DOMContentLoaded', function() {
-            // 支付方式分布
-            const paymentChart = echarts.init(document.getElementById('paymentChart'));
-            const paymentChartData = Object.entries(paymentData).map(([name, value]) => ({name, value}));
-            paymentChart.setOption({
-                tooltip: {
-                    trigger: 'item',
-                    formatter: '{a} <br/>{b}: {c} ({d}%)'
-                },
-                legend: {
-                    orient: 'vertical',
-                    left: 'left',
-                    data: paymentChartData.map(d => d.name)
-                },
-                series: [{
-                    name: '支付方式',
-                    type: 'pie',
-                    radius: '60%',
-                    data: paymentChartData,
-                    emphasis: {
-                        itemStyle: {
-                            shadowBlur: 10,
-                            shadowOffsetX: 0,
-                            shadowColor: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    }
-                }]
-            });
+    const rfmChart = echarts.init(document.getElementById("rfmChart"));
+    rfmChart.setOption({
+      tooltip: { trigger: "item" },
+      legend: { bottom: 0 },
+      series: [{ type: "pie", radius: "65%", data: makeBarData(data.rfm) }]
+    });
 
-            // 用户聚类分布
-            const clusterChart = echarts.init(document.getElementById('clusterChart'));
-            const clusterChartData = Object.entries(clusterData).map(([name, value]) => ({name: '聚类' + name, value}));
-            clusterChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: {
-                        type: 'shadow'
-                    }
-                },
-                xAxis: {
-                    type: 'category',
-                    data: clusterChartData.map(d => d.name)
-                },
-                yAxis: {
-                    type: 'value'
-                },
-                series: [{
-                    data: clusterChartData.map(d => d.value),
-                    type: 'bar',
-                    itemStyle: {
-                        color: '#1890ff'
-                    }
-                }]
-            });
+    const rfmSpendChart = echarts.init(document.getElementById("rfmSpendChart"));
+    rfmSpendChart.setOption({
+      tooltip: { trigger: "axis", valueFormatter: moneyFmt },
+      grid: { left: 72, right: 18, top: 24, bottom: 64 },
+      xAxis: { type: "category", data: Object.keys(data.rfmSpend), axisLabel: { rotate: 25 } },
+      yAxis: { type: "value" },
+      series: [{ type: "bar", data: Object.values(data.rfmSpend), color: "#f97316" }]
+    });
 
-            // 月度订单趋势
-            const trendChart = echarts.init(document.getElementById('trendChart'));
-            const monthlyKeys = Object.keys(monthlyData).sort();
-            const monthlyValues = monthlyKeys.map(key => monthlyData[key]);
-            trendChart.setOption({
-                tooltip: {
-                    trigger: 'axis'
-                },
-                xAxis: {
-                    type: 'category',
-                    data: monthlyKeys
-                },
-                yAxis: {
-                    type: 'value'
-                },
-                series: [{
-                    data: monthlyValues,
-                    type: 'line',
-                    smooth: true,
-                    lineStyle: {
-                        color: '#1890ff',
-                        width: 2
-                    },
-                    areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            {offset: 0, color: 'rgba(24, 144, 255, 0.3)'},
-                            {offset: 1, color: 'rgba(24, 144, 255, 0.1)'}
-                        ])
-                    }
-                }]
-            });
-
-            // 各聚类平均消费
-            const clusterSpendChart = echarts.init(document.getElementById('clusterSpendChart'));
-            const clusterSpendKeys = Object.keys(clusterSpendData).sort();
-            const clusterSpendValues = clusterSpendKeys.map(key => parseFloat(clusterSpendData[key]).toFixed(2));
-            clusterSpendChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: {
-                        type: 'shadow'
-                    }
-                },
-                xAxis: {
-                    type: 'category',
-                    data: clusterSpendKeys.map(k => '聚类' + k)
-                },
-                yAxis: {
-                    type: 'value',
-                    name: '平均消费 (R$)'
-                },
-                series: [{
-                    data: clusterSpendValues,
-                    type: 'bar',
-                    itemStyle: {
-                        color: '#52c41a'
-                    }
-                }]
-            });
-
-            // 各聚类平均订单数
-            const clusterOrderChart = echarts.init(document.getElementById('clusterOrderChart'));
-            const clusterOrderKeys = Object.keys(clusterOrderData).sort();
-            const clusterOrderValues = clusterOrderKeys.map(key => parseFloat(clusterOrderData[key]).toFixed(2));
-            clusterOrderChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: {
-                        type: 'shadow'
-                    }
-                },
-                xAxis: {
-                    type: 'category',
-                    data: clusterOrderKeys.map(k => '聚类' + k)
-                },
-                yAxis: {
-                    type: 'value',
-                    name: '平均订单数'
-                },
-                series: [{
-                    data: clusterOrderValues,
-                    type: 'bar',
-                    itemStyle: {
-                        color: '#fa8c16'
-                    }
-                }]
-            });
-
-            // 客户价值分布
-            const rfmChart = echarts.init(document.getElementById('rfmChart'));
-            const rfmChartData = Object.entries(rfmData).map(([name, value]) => ({name, value}));
-            rfmChart.setOption({
-                tooltip: {
-                    trigger: 'item',
-                    formatter: '{a} <br/>{b}: {c} ({d}%)'
-                },
-                legend: {
-                    orient: 'vertical',
-                    left: 'left',
-                    data: rfmChartData.map(d => d.name)
-                },
-                series: [{
-                    name: '客户群体',
-                    type: 'pie',
-                    radius: '60%',
-                    data: rfmChartData,
-                    emphasis: {
-                        itemStyle: {
-                            shadowBlur: 10,
-                            shadowOffsetX: 0,
-                            shadowColor: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    }
-                }]
-            });
-
-            // 各群体平均消费金额
-            const rfmSpendChart = echarts.init(document.getElementById('rfmSpendChart'));
-            const rfmSpendChartData = Object.entries(rfmSpendData).map(([name, value]) => ({name, value}));
-            rfmSpendChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: {
-                        type: 'shadow'
-                    }
-                },
-                xAxis: {
-                    type: 'category',
-                    data: rfmSpendChartData.map(d => d.name),
-                    axisLabel: {
-                        rotate: 45
-                    }
-                },
-                yAxis: {
-                    type: 'value',
-                    name: '平均消费 (R$)'
-                },
-                series: [{
-                    data: rfmSpendChartData.map(d => parseFloat(d.value).toFixed(2)),
-                    type: 'bar',
-                    itemStyle: {
-                        color: '#722ed1'
-                    }
-                }]
-            });
-
-            // 地区销量TOP10
-            const regionChart = echarts.init(document.getElementById('regionChart'));
-            const regionChartData = Object.entries(regionData).map(([name, value]) => ({name, value}));
-            regionChart.setOption({
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: {
-                        type: 'shadow'
-                    }
-                },
-                xAxis: {
-                    type: 'category',
-                    data: regionChartData.map(d => d.name),
-                    axisLabel: {
-                        rotate: 45
-                    }
-                },
-                yAxis: {
-                    type: 'value',
-                    name: '销售额 (R$)'
-                },
-                series: [{
-                    data: regionChartData.map(d => parseFloat(d.value).toFixed(2)),
-                    type: 'bar',
-                    itemStyle: {
-                        color: '#13c2c2'
-                    }
-                }]
-            });
-
-            // 地区销量趋势
-            const regionTrendChart = echarts.init(document.getElementById('regionTrendChart'));
-            regionTrendChart.setOption({
-                tooltip: {
-                    trigger: 'axis'
-                },
-                legend: {
-                    data: regionTrendData.map(d => d.name)
-                },
-                xAxis: {
-                    type: 'category',
-                    data: months
-                },
-                yAxis: {
-                    type: 'value',
-                    name: '销售额 (R$)'
-                },
-                series: regionTrendData.map(d => ({
-                    name: d.name,
-                    type: 'line',
-                    data: d.data.map(v => parseFloat(v).toFixed(2)),
-                    smooth: true
-                }))
-            });
-
-            // 标签页切换
-            const tabs = document.querySelectorAll('.tab');
-            tabs.forEach(tab => {
-                tab.addEventListener('click', function() {
-                    tabs.forEach(t => t.classList.remove('active'));
-                    this.classList.add('active');
-                    
-                    const tabContents = document.querySelectorAll('.tab-content');
-                    tabContents.forEach(content => content.classList.remove('active'));
-                    const tabId = this.getAttribute('data-tab');
-                    document.getElementById(tabId).classList.add('active');
-                });
-            });
-
-            // 响应式调整
-            window.addEventListener('resize', function() {
-                paymentChart.resize();
-                clusterChart.resize();
-                trendChart.resize();
-                clusterSpendChart.resize();
-                clusterOrderChart.resize();
-                rfmChart.resize();
-                rfmSpendChart.resize();
-                regionChart.resize();
-                regionTrendChart.resize();
-            });
-        });
-    </script>
+    window.addEventListener("resize", () => {
+      [monthlyChart, paymentChart, regionChart, regionTrendChart, rfmChart, rfmSpendChart].forEach(chart => chart.resize());
+    });
+  </script>
 </body>
 </html>
