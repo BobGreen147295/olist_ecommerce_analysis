@@ -52,8 +52,9 @@ def load_data() -> dict:
     )
     monthly_state = monthly_state.fillna("unknown")
 
+    rfm_with_state = rfm.merge(customers[["customer_id", "customer_state"]], on="customer_id", how="left")
     rfm_summary = (
-        rfm.groupby(["customer_segment", "customer_state"], dropna=False)
+        rfm_with_state.groupby(["customer_segment", "customer_state"], dropna=False)
         .agg(
             customers=("customer_id", "nunique"),
             avg_recency=("recency", "mean"),
@@ -65,8 +66,9 @@ def load_data() -> dict:
         .reset_index()
     )
 
+    clusters_with_state = clusters.merge(customers[["customer_id", "customer_state"]], on="customer_id", how="left")
     cluster_summary = (
-        clusters.groupby(["cluster", "cluster_label", "customer_state"], dropna=False)
+        clusters_with_state.groupby(["cluster", "cluster_label", "customer_state"], dropna=False)
         .agg(customers=("customer_id", "nunique"), avg_spent=("total_spent", "mean"), avg_orders=("order_count", "mean"))
         .round(2)
         .reset_index()

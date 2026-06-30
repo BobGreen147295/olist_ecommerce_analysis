@@ -47,7 +47,7 @@ for region in top_regions:
     })
 
 # 获取所有月份
-all_months = sorted(sales_trends['month'].unique())
+all_months = sorted([int(m) for m in sales_trends['month'].unique()])
 
 # 填充缺失的月份数据
 for region in region_trend_data:

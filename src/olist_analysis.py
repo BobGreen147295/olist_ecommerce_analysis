@@ -36,11 +36,11 @@ def crawl_brazil_population_data():
 
         # 保存数据
         df.to_csv('data/processed/brazil_population.csv', index=False)
-        print("✓ 巴西人口数据爬取完成，已保存到 data/processed/brazil_population.csv")
+        print("[OK] 巴西人口数据爬取完成，已保存到 data/processed/brazil_population.csv")
 
         return df
     except Exception as e:
-        print(f"✗ 爬取数据时出错: {e}")
+        print(f"[ERROR] 爬取数据时出错: {e}")
         # 如果爬取失败，返回空DataFrame
         return pd.DataFrame()
 
@@ -93,7 +93,7 @@ customers.to_csv("data/processed/cleaned_customers.csv", index=False)
 orders.to_csv("data/processed/cleaned_orders.csv", index=False, na_rep='')
 payments.to_csv("data/processed/cleaned_payments.csv", index=False)
 order_items.to_csv("data/processed/cleaned_order_items.csv", index=False)
-print("✓ 数据清洗完成，已保存到 data/processed/")
+print("[OK] 数据清洗完成，已保存到 data/processed/")
 
 # ====================== 结合爬虫数据进行分析 ======================
 if not population_df.empty:
@@ -110,7 +110,7 @@ if not population_df.empty:
 
     # 保存合并后的数据
     merged_data.to_csv('data/processed/region_analysis.csv', index=False)
-    print("✓ 结合人口数据的分析完成，已保存到 data/processed/region_analysis.csv")
+    print("[OK] 结合人口数据的分析完成，已保存到 data/processed/region_analysis.csv")
 
 # ====================== 画图模块 ======================
 import matplotlib.pyplot as plt
@@ -138,7 +138,7 @@ plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig("output/charts/chart_01_各州用户数.png")
 plt.close()
-print("  ✓ chart_01_各州用户数.png")
+print("  [OK] chart_01_各州用户数.png")
 
 # 2. 城市用户TOP20
 city_users = customers.groupby('customer_city')['customer_id'].nunique().sort_values(ascending=False).head(20)
@@ -151,7 +151,7 @@ plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig("output/charts/chart_02_城市用户TOP20.png")
 plt.close()
-print("  ✓ chart_02_城市用户TOP20.png")
+print("  [OK] chart_02_城市用户TOP20.png")
 
 # 3. 城市购买力TOP15
 city_sales = order_items.merge(orders, on='order_id').merge(customers, on='customer_id').merge(payments, on='order_id')
@@ -165,7 +165,7 @@ plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig("output/charts/chart_03_城市购买力TOP15.png")
 plt.close()
-print("  ✓ chart_03_城市购买力TOP15.png")
+print("  [OK] chart_03_城市购买力TOP15.png")
 
 # 4. 各州购买力
 state_revenue = city_sales.groupby('customer_state')['payment_value'].sum().sort_values(ascending=False)
@@ -178,7 +178,7 @@ plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig("output/charts/chart_04_各州购买力.png")
 plt.close()
-print("  ✓ chart_04_各州购买力.png")
+print("  [OK] chart_04_各州购买力.png")
 
 # 5. 支付方式
 payment_counts = payments['payment_type'].value_counts()
@@ -188,7 +188,7 @@ plt.title('支付方式偏好')
 plt.tight_layout()
 plt.savefig("output/charts/chart_05_支付方式.png")
 plt.close()
-print("  ✓ chart_05_支付方式.png")
+print("  [OK] chart_05_支付方式.png")
 
 # 6. 一周订单量
 weekday_orders = orders.groupby('weekday').size()
@@ -202,7 +202,7 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig("output/charts/chart_06_一周订单量.png")
 plt.close()
-print("  ✓ chart_06_一周订单量.png")
+print("  [OK] chart_06_一周订单量.png")
 
 # 7. 一周销售额
 weekday_sales = city_sales.groupby('weekday')['payment_value'].sum()
@@ -215,7 +215,7 @@ plt.xticks(range(7), ['周一', '周二', '周三', '周四', '周五', '周六'
 plt.tight_layout()
 plt.savefig("output/charts/chart_07_一周销售额.png")
 plt.close()
-print("  ✓ chart_07_一周销售额.png")
+print("  [OK] chart_07_一周销售额.png")
 
 # 8. 24小时订单量
 hour_orders = orders.groupby('hour').size()
@@ -229,7 +229,7 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig("output/charts/chart_08_24小时订单量.png")
 plt.close()
-print("  ✓ chart_08_24小时订单量.png")
+print("  [OK] chart_08_24小时订单量.png")
 
 # 9. 24小时销售额
 hour_sales = city_sales.groupby('hour')['payment_value'].sum()
@@ -242,7 +242,7 @@ plt.xticks(rotation=0)
 plt.tight_layout()
 plt.savefig("output/charts/chart_09_24小时销售额.png")
 plt.close()
-print("  ✓ chart_09_24小时销售额.png")
+print("  [OK] chart_09_24小时销售额.png")
 
 # 10. 订单状态
 order_status = orders['order_status'].value_counts()
@@ -255,7 +255,7 @@ plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig("output/charts/chart_10_订单状态.png")
 plt.close()
-print("  ✓ chart_10_订单状态.png")
+print("  [OK] chart_10_订单状态.png")
 
 # 11. 商品均价TOP15
 product_avg_price = order_items.groupby('product_id')['price'].mean().sort_values(ascending=False).head(15)
@@ -268,7 +268,7 @@ plt.xticks(rotation=45, ha='right')
 plt.tight_layout()
 plt.savefig("output/charts/chart_11_商品单价TOP15.png")
 plt.close()
-print("  ✓ chart_11_商品单价TOP15.png")
+print("  [OK] chart_11_商品单价TOP15.png")
 
 # 12. 月度订单趋势
 monthly_orders = orders.groupby(['year', 'month']).size().reset_index(name='order_count')
@@ -283,7 +283,7 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig("output/charts/chart_12_月度订单趋势.png")
 plt.close()
-print("  ✓ chart_12_月度订单趋势.png")
+print("  [OK] chart_12_月度订单趋势.png")
 
 # 13. 各地区人均销售额（如果有爬虫数据）
 if not population_df.empty:
@@ -296,9 +296,9 @@ if not population_df.empty:
     plt.tight_layout()
     plt.savefig("output/charts/chart_13_各地区人均销售额.png")
     plt.close()
-    print("  ✓ chart_13_各地区人均销售额.png")
+    print("  [OK] chart_13_各地区人均销售额.png")
 
-print("\n✓ 所有图表已生成完成，保存在 output/charts/ 目录")
+print("\n[OK] 所有图表已生成完成，保存在 output/charts/ 目录")
 
 # ====================== 机器学习模块 ======================
 from sklearn.cluster import KMeans
@@ -355,7 +355,7 @@ def user_segmentation():
 
     # 保存分群结果
     user_data.to_csv("data/processed/user_clusters.csv", index=False)
-    print("✓ 用户分群结果已保存到 data/processed/user_clusters.csv")
+    print("[OK] 用户分群结果已保存到 data/processed/user_clusters.csv")
 
     return user_data
 
@@ -397,7 +397,7 @@ def purchase_prediction():
     # 保存模型预测结果
     purchase_data['prediction'] = model.predict(X)
     purchase_data.to_csv("data/processed/purchase_predictions.csv", index=False)
-    print("✓ 购买预测结果已保存到 data/processed/purchase_predictions.csv")
+    print("[OK] 购买预测结果已保存到 data/processed/purchase_predictions.csv")
 
 # 3. 销量/地区趋势预测（回归）
 def sales_trend_prediction():
@@ -443,7 +443,7 @@ def sales_trend_prediction():
 
     # 保存趋势数据
     sales_data.to_csv("data/processed/sales_trends.csv", index=False)
-    print("✓ 销量趋势数据已保存到 data/processed/sales_trends.csv")
+    print("[OK] 销量趋势数据已保存到 data/processed/sales_trends.csv")
 
 # 4. RFM客户价值分析
 def rfm_analysis():
@@ -518,7 +518,7 @@ def rfm_analysis():
 
     # 保存RFM分析结果
     rfm_data.to_csv("data/processed/rfm_analysis.csv", index=False)
-    print("✓ RFM分析结果已保存到 data/processed/rfm_analysis.csv")
+    print("[OK] RFM分析结果已保存到 data/processed/rfm_analysis.csv")
 
 # 执行所有机器学习分析
 print("\n开始执行机器学习分析...")

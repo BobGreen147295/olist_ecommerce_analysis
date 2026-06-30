@@ -1,0 +1,106 @@
+{
+  "generated_at": "2026-06-30 20:55:16",
+  "workflow": "AI 电商运营多智能体工作流",
+  "summary": {
+    "agent": "运营总监智能体",
+    "summary": "系统已从经营、客户、地区、支付和活动五个角度完成诊断，建议优先做人群分层运营和核心地区增长实验。",
+    "top_actions": [
+      "建立三套触达策略：复购礼券、二次购买券、低成本内容唤醒，并分别跟踪转化率。",
+      "先为 SP、RJ、MG 制定一轮地区专项活动，并对比活动前后客单价和订单数。",
+      "活动方案：目标人群=潜在高价值客户；权益=满减券；周期=7 天；指标=领取率、核销率、复购率、客单价。"
+    ],
+    "ordered_findings": [
+      {
+        "agent": "客户分层智能体",
+        "priority": "P1",
+        "title": "客户运营应优先围绕高价值和潜在高价值人群设计",
+        "evidence": "高价值客户 0 人，占比 0.0%；潜在高价值客户 0 人，占比 0.0%。",
+        "recommendation": "高价值客户做会员权益和复购激励；潜在高价值客户做优惠券召回、关联推荐和限时活动；低价值客户控制补贴成本。",
+        "next_action": "建立三套触达策略：复购礼券、二次购买券、低成本内容唤醒，并分别跟踪转化率。",
+        "metric_snapshot": {
+          "segment_counts": {
+            "一般价值客户": 46529,
+            "低价值客户": 43785,
+            "潜在高价值客户": 8349
+          },
+          "avg_monetary_by_segment": {
+            "潜在高价值客户": 693.65,
+            "低价值客户": 166.49,
+            "一般价值客户": 155.32
+          }
+        }
+      },
+      {
+        "agent": "地区增长智能体",
+        "priority": "P1",
+        "title": "地区销售集中度高，核心地区值得继续深挖",
+        "evidence": "TOP3 地区 SP、RJ、MG 贡献 62.6% 销售额。",
+        "recommendation": "核心地区优先做广告投放、爆品活动和仓配优化；长尾地区用小预算测试增量。",
+        "next_action": "先为 SP、RJ、MG 制定一轮地区专项活动，并对比活动前后客单价和订单数。",
+        "metric_snapshot": {
+          "top_regions": {
+            "SP": 5998168.27,
+            "RJ": 2144379.69,
+            "MG": 1872257.26
+          },
+          "top3_share": 0.6256
+        }
+      },
+      {
+        "agent": "活动策略智能体",
+        "priority": "P1",
+        "title": "优先上线潜在高价值客户二次购买活动",
+        "evidence": "潜在高价值客户池约 0 人；按 3.5% 保守转化估算，可带来约 0 单，预计销售额 R$0.00。",
+        "recommendation": "用限时券、关联推荐和加购提醒促进二次购买，预算优先投向核心地区的潜在高价值客户。",
+        "next_action": "活动方案：目标人群=潜在高价值客户；权益=满减券；周期=7 天；指标=领取率、核销率、复购率、客单价。",
+        "metric_snapshot": {
+          "target_segment": "潜在高价值",
+          "target_customers": 0,
+          "assumed_conversion": 0.035,
+          "expected_orders": 0,
+          "expected_revenue": 0.0
+        }
+      },
+      {
+        "agent": "经营监控智能体",
+        "priority": "P2",
+        "title": "整体经营相对稳定，可从客群和地区寻找增量",
+        "evidence": "最近月份销售额环比 -4.1%，订单数环比 3.5%，全局平均客单价 R$160.99。",
+        "recommendation": "用月度经营指标先判断业务波动，再决定是排查异常还是放大增长策略。",
+        "next_action": "优先做高价值客户复购和重点地区转化优化。",
+        "metric_snapshot": {
+          "latest_month": "2018-10",
+          "analysis_month": "2018-08",
+          "latest_revenue": 1022425.32,
+          "latest_orders": 6512,
+          "revenue_change": -0.0414,
+          "order_change": 0.035,
+          "avg_order_value": 160.99
+        }
+      },
+      {
+        "agent": "支付转化智能体",
+        "priority": "P2",
+        "title": "支付方式可以作为转化率和客单价优化入口",
+        "evidence": "credit_card 是主流支付方式，占比 73.9%；平均分期期数 2.85。",
+        "recommendation": "围绕主流支付方式设计支付优惠、满减门槛或分期免息，观察支付结构和客单价变化。",
+        "next_action": "做一次支付优惠 A/B 测试：核心地区展示支付优惠，对照组保持原价，比较支付转化和客单价。",
+        "metric_snapshot": {
+          "payment_counts": {
+            "credit_card": 76793,
+            "boleto": 19784,
+            "voucher": 5769,
+            "debit_card": 1529
+          },
+          "payment_values": {
+            "credit_card": 12541895.56,
+            "boleto": 2869361.27,
+            "voucher": 379436.87,
+            "debit_card": 217989.79
+          },
+          "avg_installments": 2.85
+        }
+      }
+    ]
+  }
+}
