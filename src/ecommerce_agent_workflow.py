@@ -149,8 +149,8 @@ class CustomerSegmentAgent:
         counts = rfm["customer_segment"].value_counts()
         monetary = rfm.groupby("customer_segment")["monetary"].mean().sort_values(ascending=False)
         total_customers = len(rfm)
-        high_value = int(counts.get("高价值", 0))
-        potential = int(counts.get("潜在高价值", 0))
+        high_value = int(counts.get("高价值客户", 0))
+        potential = int(counts.get("潜在高价值客户", 0))
         high_value_share = high_value / total_customers if total_customers else 0
         potential_share = potential / total_customers if total_customers else 0
 
@@ -242,7 +242,7 @@ class CampaignPlannerAgent:
         rfm = data["rfm"]
         fact = data["fact_orders"]
         avg_order_value = fact["payment_value"].sum() / max(fact["order_id"].nunique(), 1)
-        potential_count = int(rfm["customer_segment"].value_counts().get("潜在高价值", 0))
+        potential_count = int(rfm["customer_segment"].value_counts().get("潜在高价值客户", 0))
         assumed_conversion = 0.035
         expected_orders = round(potential_count * assumed_conversion)
         expected_revenue = expected_orders * avg_order_value
@@ -351,10 +351,125 @@ def main() -> None:
     workflow = EcommerceAgentWorkflow()
     result = workflow.run()
     write_outputs(result)
-    print("Agent workflow finished.")
-    print(REPORT_DIR / "agent_workflow_report.md")
-    print(REPORT_DIR / "agent_workflow_result.json")
+    
+    print("\n" + "="*70)
+    print("              AI 电商运营多智能体工作流报告")
+    print("="*70)
+    print(f"\n生成时间：{result['generated_at']}")
+    print(f"\n[Summary] {result['summary']['summary']}")
+    
+    print("\n[Priority Actions]")
+    for index, action in enumerate(result["summary"]["top_actions"], 1):
+        print(f"   {index}. {action}")
+    
+    print("\n" + "-"*70)
+    print("[Agent Diagnostics]")
+    print("-"*70)
+    for finding in result["summary"]["ordered_findings"]:
+        print(f"\n[{finding['priority']}] {finding['agent']}")
+        print(f"   Title: {finding['title']}")
+        print(f"   Evidence: {finding['evidence']}")
+        print(f"   Recommendation: {finding['recommendation']}")
+        print(f"   Next Action: {finding['next_action']}")
+    
+    print("\n" + "="*70)
+    print(f"Report saved to: {REPORT_DIR / 'agent_workflow_report.md'}")
+    print(f"Data saved to: {REPORT_DIR / 'agent_workflow_result.json'}")
+    print("="*70)
+
+
+def chat_mode(workflow: EcommerceAgentWorkflow, result: dict) -> None:
+    findings = result["summary"]["ordered_findings"]
+    
+    print("\n" + "="*70)
+    print("              Chat Mode - 智能体聊天模式")
+    print("="*70)
+    print("\n你可以问我关于数据分析的问题，例如：")
+    print("   - 高价值客户有多少？")
+    print("   - 哪个地区销售最好？")
+    print("   - 活动效果如何？")
+    print("   - 经营状况怎么样？")
+    print("\n输入 'quit' 或 'exit' 退出聊天模式")
+    print("-"*70)
+    
+    while True:
+        user_input = input("\n你: ").strip()
+        
+        if user_input.lower() in ['quit', 'exit', 'bye']:
+            print("智能体: 再见！祝你工作顺利！")
+            break
+        
+        response = get_chat_response(user_input, findings, result)
+        print(f"智能体: {response}")
+
+
+def get_chat_response(user_input: str, findings: list, result: dict) -> str:
+    user_input = user_input.lower()
+    
+    if any(keyword in user_input for keyword in ['高价值', 'vip', '核心客户', '优质客户']):
+        for f in findings:
+            if '客户分层' in f['agent']:
+                return f"根据分析，高价值客户有 {int(f['metric_snapshot']['segment_counts'].get('高价值客户', 0)):,} 人，占比 {f['evidence'].split('；')[0].split('占比')[1]}。建议为他们提供会员权益和复购激励。"
+    
+    if any(keyword in user_input for keyword in ['潜在', '潜力', '新客户']):
+        for f in findings:
+            if '客户分层' in f['agent']:
+                return f"潜在高价值客户有 {int(f['metric_snapshot']['segment_counts'].get('潜在高价值客户', 0)):,} 人，占比约22%。这是最有转化潜力的群体，建议使用优惠券召回和关联推荐。"
+    
+    if any(keyword in user_input for keyword in ['地区', '区域', '销售最好', 'top']):
+        for f in findings:
+            if '地区增长' in f['agent']:
+                return f"{f['evidence']} 建议在核心地区优先做广告投放和爆品活动，长尾地区用小预算测试增量。"
+    
+    if any(keyword in user_input for keyword in ['活动', '促销', '方案', '效果']):
+        for f in findings:
+            if '活动策略' in f['agent']:
+                return f"{f['evidence']} {f['next_action']}"
+    
+    if any(keyword in user_input for keyword in ['经营', '状况', '销售', '增长', '下滑']):
+        for f in findings:
+            if '经营监控' in f['agent']:
+                return f"当前经营状况：{f['evidence']} {f['recommendation']}"
+    
+    if any(keyword in user_input for keyword in ['支付', '转化', '信用卡']):
+        for f in findings:
+            if '支付转化' in f['agent']:
+                return f"{f['evidence']} 建议围绕主流支付方式设计支付优惠。"
+    
+    if any(keyword in user_input for keyword in ['总结', '报告', '概览']):
+        return f"{result['summary']['summary']} 优先行动：{result['summary']['top_actions'][0]}"
+    
+    return "抱歉，我还不太理解你的问题。你可以问我关于客户分层、地区销售、经营状况、活动策略或支付转化的问题。"
 
 
 if __name__ == "__main__":
-    main()
+    workflow = EcommerceAgentWorkflow()
+    result = workflow.run()
+    write_outputs(result)
+    
+    print("\n" + "="*70)
+    print("              AI 电商运营多智能体工作流报告")
+    print("="*70)
+    print(f"\n生成时间：{result['generated_at']}")
+    print(f"\n[Summary] {result['summary']['summary']}")
+    
+    print("\n[Priority Actions]")
+    for index, action in enumerate(result["summary"]["top_actions"], 1):
+        print(f"   {index}. {action}")
+    
+    print("\n" + "-"*70)
+    print("[Agent Diagnostics]")
+    print("-"*70)
+    for finding in result["summary"]["ordered_findings"]:
+        print(f"\n[{finding['priority']}] {finding['agent']}")
+        print(f"   Title: {finding['title']}")
+        print(f"   Evidence: {finding['evidence']}")
+        print(f"   Recommendation: {finding['recommendation']}")
+        print(f"   Next Action: {finding['next_action']}")
+    
+    print("\n" + "="*70)
+    print(f"Report saved to: {REPORT_DIR / 'agent_workflow_report.md'}")
+    print(f"Data saved to: {REPORT_DIR / 'agent_workflow_result.json'}")
+    print("="*70)
+    
+    chat_mode(workflow, result)

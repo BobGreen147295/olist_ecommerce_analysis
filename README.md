@@ -1,15 +1,16 @@
 # 巴西 Olist 海外电商AI运营增长分析系统项目
 
-> 🔥 **亮点项目**：本项目不仅包含完整的数据分析流程，还创新性地集成了 **AI 运营智能系统**，能够根据实时数据自动生成运营诊断和策略建议，展现数据分析到智能决策的完整链路。
+> 🔥 **亮点项目**：本项目不仅包含完整的数据分析流程，还创新性地集成了 **AI 运营智能系统**（规则引擎 + LLM + 机器学习），能够根据实时数据自动生成运营诊断和策略建议，展现数据分析到智能决策的完整链路。
 
 ## 🌟 项目核心亮点
 
-### 1. AI 驱动的运营智能系统（重点功能）
-- **动态数据处理**：实时读取和处理后的数据，根据筛选条件动态计算
-- **智能运营诊断**：基于规则引擎的AI分析，自动判断经营状况并给出诊断建议
+### 1. AI 增强版运营智能系统（重点功能）
+- **多智能体协作架构**：经营监控、客户分层、地区增长、支付转化、活动策略等多个专业智能体协同工作
+- **规则引擎**：核心业务逻辑基于规则引擎实现，保证结果的确定性和可解释性
+- **LLM推理智能体**：集成大语言模型，支持自然语言推理和深度业务分析
+- **机器学习预测**：使用XGBoost模型进行客户流失预测，自动识别高风险客户群体
 - **策略自动生成**：根据不同客户群体和地区，自动生成针对性的运营策略
-- **活动模拟器**：模拟不同预算和策略下的预期效果，辅助运营决策
-- **面试亮点展示**：动态切换视图，实时展示数据变化，体现技术深度
+- **交互式聊天模式**：支持与智能体对话，查询数据分析结果
 
 ### 2. 完整的数据分析流程
 - ✅ 数据清洗与预处理（10万+条数据）
@@ -22,6 +23,7 @@
 - 📊 **逻辑回归购买预测**：预测用户购买行为，识别潜在客户
 - 📈 **线性回归销量预测**：预测各地区销量趋势，辅助库存管理
 - 💎 **RFM 客户价值分析**：科学的客户分层体系
+- 🤖 **XGBoost 流失预测**：机器学习预测客户流失概率
 
 ### 4. 创新性的爬虫应用
 - 🕷️ 爬取巴西各地区人口数据
@@ -44,8 +46,8 @@
 | 类别 | 技术栈 |
 |------|--------|
 | **数据分析** | Python, Pandas, NumPy |
-| **机器学习** | Scikit-learn (KMeans, Logistic Regression, Linear Regression) |
-| **AI 引擎** | 本地规则引擎 + 动态数据聚合 |
+| **机器学习** | Scikit-learn (KMeans, Logistic Regression, Linear Regression), XGBoost |
+| **AI 引擎** | 本地规则引擎 + LLM (OpenAI GPT-4o) + 多智能体协作架构 |
 | **可视化** | Matplotlib, Seaborn, ECharts |
 | **交互仪表盘** | Streamlit, HTML/ECharts |
 | **数据爬虫** | Requests, BeautifulSoup |
@@ -79,6 +81,17 @@ olist_project/
 │   │   ├── 智能诊断逻辑
 │   │   └── 策略自动生成
 │   │
+│   ├── ecommerce_agent_workflow.py   # 【多智能体工作流】规则引擎版
+│   │   ├── 5个专业智能体协同工作
+│   │   ├── 支持聊天模式交互
+│   │   └── 自动生成分析报告
+│   │
+│   ├── enhanced_agent_workflow.py    # 【AI增强版工作流】🔥 重点
+│   │   ├── 规则引擎（确定性逻辑）
+│   │   ├── LLM推理智能体（自然语言分析）
+│   │   ├── XGBoost流失预测（机器学习）
+│   │   └── 多智能体协作架构
+│   │
 │   └── generate_ai_operations_system.py  # 【生成AI运营系统】
 │       ├── 读取处理后数据
 │       ├── 构建动态筛选逻辑
@@ -92,7 +105,9 @@ olist_project/
 │
 ├── reports/                          # 文档和面试材料
 │   ├── ai_operations_interview_notes.md  # AI系统面试讲解指南
-│   └── interview_demo_script.md      # 完整面试演示脚本
+│   ├── interview_demo_script.md      # 完整面试演示脚本
+│   ├── agent_workflow_report.md      # 多智能体分析报告
+│   └── enhanced_workflow_report.md   # AI增强版分析报告
 │
 ├── output/charts/                    # 自动生成的13张图表
 │   ├── chart_01_各州用户数.png
@@ -138,7 +153,30 @@ python src/olist_analysis.py
 
 ### 启动交互式仪表盘
 
-#### 方案1：AI 运营智能系统（🔥 推荐面试使用）
+#### 方案1：AI增强版多智能体工作流（🔥 推荐面试使用）
+```bash
+# 运行增强版工作流（含LLM+ML）
+python src/enhanced_agent_workflow.py
+```
+
+**系统特性**：
+- 多智能体协作：经营监控、客户分层、LLM推理、流失预测
+- 机器学习预测：XGBoost模型预测客户流失概率
+- LLM推理：集成GPT-4o进行自然语言深度分析
+- 自动生成结构化报告和JSON数据
+
+#### 方案2：规则引擎版工作流（基础版）
+```bash
+# 运行基础版工作流（纯规则引擎）
+python src/ecommerce_agent_workflow.py
+```
+
+**系统特性**：
+- 5个专业智能体协同工作
+- 支持交互式聊天模式
+- 不需要外部API，本地运行
+
+#### 方案3：AI 运营智能系统（可视化版）
 ```bash
 # 生成动态系统
 python src/generate_ai_operations_system.py
@@ -152,13 +190,13 @@ python src/generate_ai_operations_system.py
 - 右侧实时更新：经营指标、趋势图、AI诊断、策略建议
 - 活动模拟器：输入预算，预测效果
 
-#### 方案2：Streamlit 交互仪表盘
+#### 方案4：Streamlit 交互仪表盘
 ```bash
 streamlit run dashboard/dashboard.py
 # 访问：http://localhost:8501
 ```
 
-#### 方案3：HTML 仪表盘
+#### 方案5：HTML 仪表盘
 ```bash
 python src/generate_dashboard.py
 # 打开：dashboard/dashboard.html

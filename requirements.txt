@@ -10,6 +10,12 @@ seaborn>=0.11.0
 
 # 机器学习
 scikit-learn>=1.0.0
+xgboost>=1.5.0
+
+# LLM和AI智能体
+openai>=1.0.0
+langchain>=0.1.0
+langchain-openai>=0.0.2
 
 # 爬虫
 requests>=2.26.0

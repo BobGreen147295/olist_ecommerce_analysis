@@ -494,11 +494,11 @@ def rfm_analysis():
 
     # 客户分群
     def segment_customer(row):
-        if row['rfm_score'] >= 13:
+        if row['rfm_score'] >= 11:
             return '高价值客户'
-        elif row['rfm_score'] >= 10:
+        elif row['rfm_score'] >= 9:
             return '潜在高价值客户'
-        elif row['rfm_score'] >= 7:
+        elif row['rfm_score'] >= 6:
             return '一般价值客户'
         else:
             return '低价值客户'
