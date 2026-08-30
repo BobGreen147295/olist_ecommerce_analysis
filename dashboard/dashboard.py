@@ -1,307 +1,529 @@
+"""
+Olist 电商 AI 运营分析系统 — Streamlit 仪表盘 v2.1
+
+Tab 1: 📊 数据看板 — KPI 指标 + 交互图表
+Tab 2: 💬 AI 运营顾问 — 多轮对话 Agent，自然语言诊断
+"""
+
+import sys
+import os
+
+# 确保项目根目录在 sys.path 中
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+from src.agent.evaluation import evaluate_experiment
+from src.agent.task_store import complete_task, create_task, load_tasks, update_task
 
-# 设置中文字体
+# ── 中文字体设置 ──────────────────────────────────
 plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC", "Arial Unicode MS"]
-plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示问题
+plt.rcParams["axes.unicode_minus"] = False
 
-# 为柱状图添加数据标签
+
+# ═══════════════════════════════════════════════════════
+# 工具函数
+# ═══════════════════════════════════════════════════════
+
 def add_value_labels(ax, fmt="{:,.0f}"):
     """为柱状图的每个柱子添加数据标签"""
     for rect in ax.patches:
         height = rect.get_height()
-        ax.text(rect.get_x() + rect.get_width()/2., height + 0.05 * height,
+        if height > 0:
+            ax.text(
+                rect.get_x() + rect.get_width() / 2.0,
+                height + 0.02 * height,
                 fmt.format(height),
-                ha='center', va='bottom')
+                ha="center", va="bottom", fontsize=8,
+            )
 
-# 设置页面配置
-st.set_page_config(page_title="Olist电商数据分析仪表盘", layout="wide")
 
-# 加载数据
-@st.cache(allow_output_mutation=True)
+@st.cache_data
 def load_data():
-    # 加载清洗后的数据
-    customers = pd.read_csv("data/processed/cleaned_customers.csv")
-    orders = pd.read_csv("data/processed/cleaned_orders.csv")
-    payments = pd.read_csv("data/processed/cleaned_payments.csv")
-    order_items = pd.read_csv("data/processed/cleaned_order_items.csv")
-    
-    # 加载机器学习结果
-    user_clusters = pd.read_csv("data/processed/user_clusters.csv")
-    rfm_analysis = pd.read_csv("data/processed/rfm_analysis.csv")
-    sales_trends = pd.read_csv("data/processed/sales_trends.csv")
-    
-    # 加载爬虫数据
-    try:
-        population_data = pd.read_csv("data/processed/brazil_population.csv")
-        region_analysis = pd.read_csv("data/processed/region_analysis.csv")
-    except FileNotFoundError:
-        population_data = pd.DataFrame()
-        region_analysis = pd.DataFrame()
-    
-    return customers, orders, payments, order_items, user_clusters, rfm_analysis, sales_trends, population_data, region_analysis
+    """加载所有数据文件（缓存避免重复读取）"""
+    data = {}
+    file_map = {
+        "customers": "cleaned_customers.csv",
+        "orders": "cleaned_orders.csv",
+        "payments": "cleaned_payments.csv",
+        "order_items": "cleaned_order_items.csv",
+        "user_clusters": "user_clusters.csv",
+        "rfm_analysis": "rfm_analysis.csv",
+        "sales_trends": "sales_trends.csv",
+        "population_data": "brazil_population.csv",
+        "region_analysis": "region_analysis.csv",
+    }
+    for key, filename in file_map.items():
+        filepath = os.path.join(_project_root, "data", "processed", filename)
+        try:
+            data[key] = pd.read_csv(filepath)
+        except FileNotFoundError:
+            data[key] = pd.DataFrame()
+    return data
+
+
+# ═══════════════════════════════════════════════════════
+# 页面配置
+# ═══════════════════════════════════════════════════════
+
+st.set_page_config(
+    page_title="Olist AI 运营分析系统",
+    page_icon="🛒",
+    layout="wide",
+)
+
+# ── 页面标题 ──────────────────────────────────────
+st.title("🛒 Olist 电商 AI 运营分析系统")
+st.caption("巴西电商数据集 · LangGraph Agent · Ollama Qwen3 · XGBoost")
 
 # 加载数据
-customers, orders, payments, order_items, user_clusters, rfm_analysis, sales_trends, population_data, region_analysis = load_data()
+data = load_data()
+customers = data["customers"]
+orders = data["orders"]
+payments = data["payments"]
+order_items = data["order_items"]
+user_clusters = data["user_clusters"]
+rfm_analysis = data["rfm_analysis"]
+sales_trends = data["sales_trends"]
+population_data = data["population_data"]
+region_analysis = data["region_analysis"]
 
-# 页面标题
-st.title("Olist电商数据分析仪表盘")
+# ═══════════════════════════════════════════════════════
+# Tab 布局
+# ═══════════════════════════════════════════════════════
 
-# 侧边栏：筛选器
-st.sidebar.header("筛选条件")
-region = st.sidebar.selectbox("选择地区", ["全部"] + sorted(customers["customer_state"].unique()))
+tab_dashboard, tab_chat = st.tabs(["📊 数据看板", "💬 AI 运营顾问"])
 
-# 主内容区
-col1, col2, col3 = st.columns([1, 1.5, 1])  # 增加中间列的宽度
 
-# 关键指标卡片
-with col1:
-    total_orders = len(orders)
-    st.metric("总订单数", total_orders)
+# ╔═════════════════════════════════════════════════════╗
+# ║              TAB 1: 数据看板                        ║
+# ╚═════════════════════════════════════════════════════╝
 
-with col2:
-    total_sales = order_items["price"].sum()
-    st.metric("总销售额", f"R${total_sales:,.2f}")
+with tab_dashboard:
 
-with col3:
-    unique_customers = len(customers)
-    st.metric("总用户数", unique_customers)
+    # ── KPI 指标卡 ──────────────────────────────
+    if not orders.empty and not order_items.empty and not customers.empty:
+        col1, col2, col3, col4 = st.columns(4)
+        total_orders = len(orders)
+        # 统一与事实表/Agent 的销售额口径：使用支付金额，而不是商品行金额。
+        total_sales = payments["payment_value"].sum() if "payment_value" in payments.columns else 0
+        unique_customers = len(customers)
+        avg_order_value = total_sales / total_orders if total_orders > 0 else 0
 
-# 订单时间趋势
-st.subheader("订单时间趋势")
-orders["order_purchase_timestamp"] = pd.to_datetime(orders["order_purchase_timestamp"])
-orders["month"] = orders["order_purchase_timestamp"].dt.to_period("M")
-monthly_orders = orders.groupby("month").size().reset_index(name="订单数")
-monthly_orders["month"] = monthly_orders["month"].astype(str)
+        col1.metric("📦 总订单数", f"{total_orders:,}")
+        col2.metric("💰 总销售额", f"R$ {total_sales:,.0f}")
+        col3.metric("👥 总用户数", f"{unique_customers:,}")
+        col4.metric("🧾 平均客单价", f"R$ {avg_order_value:,.2f}")
+    else:
+        st.warning("⚠️ 数据文件未找到，请先运行数据清洗管道: `python src/data_cleaning.py`")
 
-# 使用Matplotlib绘制订单时间趋势图表
-fig, ax = plt.subplots(figsize=(12, 6))
-ax.plot(monthly_orders["month"], monthly_orders["订单数"], linewidth=2, marker='o')
-plt.xticks(rotation=45, fontsize=10)
-plt.title("订单时间趋势")
-plt.xlabel("月份")
-plt.ylabel("订单数")
-ax.ticklabel_format(style='plain', axis='y')
-# 添加数据标签
-for i, v in enumerate(monthly_orders["订单数"]):
-    ax.text(i, v + 0.02 * max(monthly_orders["订单数"]), f"{v:,}", ha='center', va='bottom', fontsize=8)
-plt.tight_layout()
-st.pyplot(fig)
+    st.divider()
 
-# 用户分群分析
-st.subheader("用户分群分析")
-cluster_counts = user_clusters["cluster"].value_counts().reset_index()
-cluster_counts.columns = ["聚类", "用户数"]
+    # ── 图表区：左右两栏 ─────────────────────────
+    chart_col_left, chart_col_right = st.columns(2)
 
-# 计算每个聚类的平均消费
-cluster_stats = user_clusters.groupby("cluster").agg({
-    "customer_id": "count",
-    "total_spent": "mean",
-    "order_count": "mean"
-}).reset_index()
-cluster_stats.columns = ["聚类", "用户数", "平均消费", "平均订单数"]
+    # ---- 左栏 ----
+    with chart_col_left:
+        # 订单时间趋势
+        st.subheader("📈 订单月度趋势")
+        if not orders.empty:
+            orders_plot = orders.copy()
+            orders_plot["order_purchase_timestamp"] = pd.to_datetime(
+                orders_plot["order_purchase_timestamp"]
+            )
+            orders_plot["month"] = orders_plot["order_purchase_timestamp"].dt.to_period("M")
+            monthly_orders = (
+                orders_plot.groupby("month").size().reset_index(name="订单数")
+            )
+            monthly_orders["month"] = monthly_orders["month"].astype(str)
 
-# 显示聚类统计
-# 设置数字格式，确保显示具体准确的数字
-st.dataframe(cluster_stats.style.format({
-    "用户数": "{:,.0f}",
-    "平均消费": "{:,.2f}",
-    "平均订单数": "{:,.2f}"
-}))
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.plot(
+                monthly_orders["month"], monthly_orders["订单数"],
+                linewidth=2, marker="o", color="#1f77b4",
+            )
+            ax.ticklabel_format(style="plain", axis="y")
+            plt.xticks(rotation=45, fontsize=8)
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.info("暂无订单数据")
 
-# 聚类分布图表
-fig, ax = plt.subplots()
-sns.barplot(x="聚类", y="用户数", data=cluster_counts, ax=ax)
-plt.title("用户聚类分布")
-# 添加数据标签
-add_value_labels(ax)
-st.pyplot(fig)
+        # 支付方式分布
+        st.subheader("💳 支付方式分布")
+        if not payments.empty:
+            payment_counts = payments["payment_type"].value_counts().reset_index()
+            payment_counts.columns = ["支付方式", "次数"]
 
-# RFM客户价值分析
-st.subheader("RFM客户价值分析")
-rfm_counts = rfm_analysis["customer_segment"].value_counts().reset_index()
-rfm_counts.columns = ["客户群体", "数量"]
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.barplot(x="支付方式", y="次数", data=payment_counts, ax=ax)
+            plt.xticks(rotation=45, fontsize=8)
+            plt.title("支付方式分布")
+            add_value_labels(ax)
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.info("暂无支付数据")
 
-# 计算RFM统计
-rfm_stats = rfm_analysis.groupby("customer_segment").agg({
-    "customer_id": "count",
-    "recency": "mean",
-    "frequency": "mean",
-    "monetary": "mean"
-}).reset_index()
-rfm_stats.columns = ["客户群体", "用户数", "平均最近购买天数", "平均购买频次", "平均消费金额"]
+        # 用户聚类
+        st.subheader("🧩 用户分群")
+        if not user_clusters.empty and "cluster_label" in user_clusters.columns:
+            cluster_counts = (
+                user_clusters["cluster_label"].value_counts().reset_index()
+            )
+            cluster_counts.columns = ["分群", "用户数"]
 
-# 显示RFM统计
-# 设置数字格式，确保显示具体准确的数字
-st.dataframe(rfm_stats.style.format({
-    "用户数": "{:,.0f}",
-    "平均最近购买天数": "{:,.2f}",
-    "平均购买频次": "{:,.2f}",
-    "平均消费金额": "{:,.2f}"
-}))
+            fig, ax = plt.subplots(figsize=(8, 4))
+            bars = sns.barplot(x="分群", y="用户数", data=cluster_counts, ax=ax)
+            plt.title("用户分群分布")
+            add_value_labels(ax)
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.info("暂无分群数据")
 
-# RFM分布图表
-fig, ax = plt.subplots()
-sns.barplot(x="客户群体", y="数量", data=rfm_counts, ax=ax)
-plt.xticks(rotation=45)
-plt.title("客户价值分布")
-# 添加数据标签
-add_value_labels(ax)
-st.pyplot(fig)
+    # ---- 右栏 ----
+    with chart_col_right:
+        # 地区销量 TOP10
+        st.subheader("🗺️ 地区销量 TOP10")
+        if not payments.empty and not orders.empty and not customers.empty:
+            region_sales = (
+                payments.groupby("order_id", as_index=False)["payment_value"].sum()
+                .merge(orders, on="order_id")
+                .merge(customers, on="customer_id")
+                .groupby("customer_state")["payment_value"]
+                .sum()
+                .reset_index()
+                .sort_values("payment_value", ascending=False)
+                .head(10)
+            )
+            region_sales = region_sales.rename(columns={"customer_state": "地区", "payment_value": "销售额"})
 
-# 地区销量分布
-st.subheader("地区销量分布")
-if region == "全部":
-    region_sales = order_items.merge(orders, on="order_id").merge(customers, on="customer_id")
-    region_sales = region_sales.groupby("customer_state")["price"].sum().reset_index()
-    # 只显示前10个销量最高的地区
-    region_sales = region_sales.sort_values("price", ascending=False).head(10)
-else:
-    region_sales = order_items.merge(orders, on="order_id").merge(customers, on="customer_id")
-    region_sales = region_sales[region_sales["customer_state"] == region].groupby("customer_state")["price"].sum().reset_index()
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.barplot(x="地区", y="销售额", data=region_sales, ax=ax)
+            plt.xticks(rotation=45, fontsize=8)
+            plt.title("地区销量 TOP10")
+            ax.ticklabel_format(style="plain", axis="y")
+            for i, v in enumerate(region_sales["销售额"]):
+                ax.text(i, v + 0.01 * max(region_sales["销售额"]),
+                        f"{v:,.0f}", ha="center", va="bottom", fontsize=7)
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.info("暂无地区数据")
 
-# 重命名列名
-region_sales.columns = ["地区", "销售额"]
+        # RFM 客户价值
+        st.subheader("💎 RFM 客户价值分层")
+        if not rfm_analysis.empty and "customer_segment" in rfm_analysis.columns:
+            rfm_counts = (
+                rfm_analysis["customer_segment"].value_counts().reset_index()
+            )
+            rfm_counts.columns = ["客户群体", "数量"]
 
-# 显示地区销量数据
-st.dataframe(region_sales.style.format({
-    "销售额": "{:,.2f}"
-}))
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.barplot(x="客户群体", y="数量", data=rfm_counts, ax=ax)
+            plt.xticks(rotation=45, fontsize=8)
+            plt.title("RFM 客户价值分布")
+            add_value_labels(ax)
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.info("暂无 RFM 数据")
 
-# 地区销量图表
-fig, ax = plt.subplots(figsize=(12, 8))  # 增加图表高度
-sns.barplot(x="地区", y="销售额", data=region_sales, ax=ax)
-plt.xticks(rotation=45, fontsize=10)
-plt.title("地区销量分布（TOP10）")
-plt.xlabel("地区")
-plt.ylabel("销售额")
-# 设置y轴为普通数字格式，避免科学计数法
-ax.ticklabel_format(style='plain', axis='y')
-# 调整y轴标签格式
-ax.set_yticklabels([f"{int(y):,}" for y in ax.get_yticks()])
-# 添加数据标签，使用两位小数格式，调整字体大小
-for i, v in enumerate(region_sales["销售额"]):
-    ax.text(i, v + 0.02 * max(region_sales["销售额"]), f"{v:,.2f}", ha='center', va='bottom', fontsize=9)
-st.pyplot(fig)
+        # 人均销售额（如有爬虫数据）
+        st.subheader("🏙️ 各州人均销售额")
+        if not region_analysis.empty and "state" in region_analysis.columns:
+            sorted_ra = region_analysis.sort_values("sales_per_capita", ascending=False)
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.barplot(x="state", y="sales_per_capita", data=sorted_ra, ax=ax)
+            plt.xticks(rotation=45, fontsize=7)
+            plt.title("各州人均销售额")
+            ax.ticklabel_format(style="plain", axis="y")
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.info("暂无人口/人均数据（需运行爬虫）")
 
-# 支付方式分析
-st.subheader("支付方式分析")
-payment_type_counts = payments["payment_type"].value_counts().reset_index()
-payment_type_counts.columns = ["支付方式", "次数"]
+    # ── 底部数据表 ──────────────────────────────
+    st.divider()
+    st.subheader("📋 数据快照")
+    with st.expander("点击展开数据预览"):
+        tab_rfm, tab_cluster, tab_trend = st.tabs(["RFM", "用户分群", "销售趋势"])
+        with tab_rfm:
+            if not rfm_analysis.empty:
+                st.dataframe(rfm_analysis.head(20), use_container_width=True)
+        with tab_cluster:
+            if not user_clusters.empty:
+                st.dataframe(user_clusters.head(20), use_container_width=True)
+        with tab_trend:
+            if not sales_trends.empty:
+                st.dataframe(sales_trends.head(20), use_container_width=True)
 
-# 显示支付方式分布数据
-st.dataframe(payment_type_counts.style.format({
-    "次数": "{:,.0f}"
-}))
-# 支付方式图表
-fig, ax = plt.subplots()
-sns.barplot(x="支付方式", y="次数", data=payment_type_counts, ax=ax)
-plt.xticks(rotation=45)
-plt.title("支付方式分布")
-# 添加数据标签
-add_value_labels(ax)
-st.pyplot(fig)
 
-# 销量趋势预测
-st.subheader("销量趋势预测")
-if len(sales_trends) > 0:
-    # 计算每个地区的总销量，按销量排序
-    region_totals = sales_trends.groupby("customer_state")["total_sales"].sum().reset_index()
-    sorted_regions = region_totals.sort_values("total_sales", ascending=False)["customer_state"].tolist()
-    
-    # 全地区销量趋势 - 使用分面图表
-    # 计算需要的子图数量
-    num_regions = len(sorted_regions)
-    num_cols = 3  # 每行显示3个图表
-    num_rows = (num_regions + num_cols - 1) // num_cols  # 计算行数
-    
-    fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, 3*num_rows))
-    axes = axes.flatten()  # 将二维数组转换为一维，便于遍历
-    
-    # 为每个地区创建单独的子图
-    for i, r in enumerate(sorted_regions):
-        ax = axes[i]
-        region_data = sales_trends[sales_trends["customer_state"] == r]
-        ax.plot(region_data["month"], region_data["total_sales"], linewidth=2)
-        ax.set_title(f"{r}地区")
-        ax.set_xlabel("月份")
-        ax.set_ylabel("销量")
-        ax.ticklabel_format(style='plain', axis='y')
-        ax.set_ylim(bottom=0)
-        ax.grid(True, alpha=0.3)
-        # 旋转x轴标签
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha="right")
-    
-    # 隐藏多余的子图
-    for i in range(num_regions, len(axes)):
-        axes[i].set_visible(False)
-    
-    plt.suptitle("全地区销量趋势", fontsize=16)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])  # 为标题留出空间
-    st.pyplot(fig)
+# ╔═════════════════════════════════════════════════════╗
+# ║              TAB 2: AI 运营顾问                    ║
+# ╚═════════════════════════════════════════════════════╝
 
-# 主要地区销量趋势对比
-st.subheader("主要地区销量趋势对比")
-if len(sales_trends) > 0:
-    # 重新计算每个地区的总销量，确保变量已定义
-    region_totals = sales_trends.groupby("customer_state")["total_sales"].sum().reset_index()
-    # 显示前5个销量最高的地区
-    top5_regions = region_totals.sort_values("total_sales", ascending=False).head(5)["customer_state"].tolist()
-    filtered_trends = sales_trends[sales_trends["customer_state"].isin(top5_regions)]
-    
-    fig, ax = plt.subplots(figsize=(12, 8))
-    # 使用对比明显的颜色
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-    markers = ['o', 's', '^', 'D', 'v']
-    
-    for i, r in enumerate(top5_regions):
-        region_data = filtered_trends[filtered_trends["customer_state"] == r]
-        ax.plot(region_data["month"], region_data["total_sales"], 
-                label=r, color=colors[i], marker=markers[i], linewidth=2, markersize=6)
-    
-    plt.xticks(rotation=45, fontsize=10)
-    plt.title("主要地区销量趋势对比（TOP5）")
-    plt.xlabel("月份")
-    plt.ylabel("销量")
-    ax.ticklabel_format(style='plain', axis='y')
-    ax.set_ylim(bottom=0)
-    plt.legend(loc='upper right', fontsize=10)
-    plt.tight_layout()
-    st.pyplot(fig)
+with tab_chat:
 
-# 爬虫数据分析
-if not region_analysis.empty:
-    st.subheader("地区人均销售额分析")
-    
-    # 显示人均销售额数据
-    st.dataframe(region_analysis.style.format({
-        "sales": "{:,.2f}",
-        "population": "{:,.0f}",
-        "sales_per_capita": "{:,.2f}"
-    }))
-    
-    # 绘制人均销售额图表
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sorted_data = region_analysis.sort_values("sales_per_capita", ascending=False)
-    sns.barplot(x="state", y="sales_per_capita", data=sorted_data, ax=ax)
-    plt.xticks(rotation=45, fontsize=10)
-    plt.title("巴西各地区人均销售额（每百万人）")
-    plt.xlabel("地区")
-    plt.ylabel("人均销售额")
-    ax.ticklabel_format(style='plain', axis='y')
-    # 添加数据标签
-    for i, v in enumerate(sorted_data["sales_per_capita"]):
-        ax.text(i, v + 0.02 * max(sorted_data["sales_per_capita"]), f"{v:,.2f}", ha='center', va='bottom', fontsize=9)
-    plt.tight_layout()
-    st.pyplot(fig)
+    # ── 初始化会话状态 ───────────────────────────
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []   # 显示用的消息列表
+    if "agent_session" not in st.session_state:
+        # 延迟导入 Agent
+        try:
+            from src.agent.agent_graph import ChatSession
+            st.session_state.agent_session = ChatSession()
+            st.session_state.agent_available = True
+        except Exception as e:
+            st.session_state.agent_session = None
+            st.session_state.agent_available = False
+            st.session_state.agent_error = str(e)
 
-# 项目信息
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 项目信息")
-st.sidebar.markdown("- **项目名称**: Olist电商数据分析")
-st.sidebar.markdown("- **技术栈**: Python, Pandas, Matplotlib, Scikit-learn, 爬虫")
-st.sidebar.markdown("- **数据来源**: Olist电商平台公开数据集 + 爬虫获取的人口数据")
-st.sidebar.markdown("- **分析维度**: 用户行为、销售趋势、客户价值、地区经济分析")
+    # ── 快捷问题 ────────────────────────────────
+    st.subheader("💬 AI 运营顾问")
+    st.caption("用自然语言提问，Agent 自动查询数据、分析、生成策略。支持多轮追问。")
+
+    quick_questions = [
+        "分析最近半年的销售趋势",
+        "圣保罗州最近销量怎么样",
+        "客户流失情况如何，怎么挽回",
+        "支付方式分布有没有问题",
+        "哪些产品卖得好",
+        "客户分群情况怎么样",
+    ]
+
+    # 快捷问题按钮行
+    cols = st.columns(len(quick_questions))
+    clicked_question = None
+    for i, (col, q) in enumerate(zip(cols, quick_questions)):
+        if col.button(q, key=f"quick_{i}", use_container_width=True):
+            clicked_question = q
+
+    st.divider()
+
+    # ── 渲染聊天历史 ────────────────────────────
+    chat_container = st.container()
+    with chat_container:
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+    # ── 处理快捷问题点击 ────────────────────────
+    if clicked_question:
+        st.session_state.pending_question = clicked_question
+
+    # ── 聊天输入框 ──────────────────────────────
+    user_input = st.chat_input(
+        "输入你的运营问题，例如：\"分析最近半年的销售趋势\"",
+        key="chat_input_main",
+    )
+
+    # 合并输入源
+    actual_input = user_input or st.session_state.pop("pending_question", None)
+
+    if actual_input:
+        # 显示用户消息
+        st.session_state.chat_history.append({"role": "user", "content": actual_input})
+
+        if not st.session_state.agent_available:
+            # Agent 不可用
+            error_msg = st.session_state.get("agent_error", "未知错误")
+            fallback = (
+                f"⚠️ **AI Agent 当前不可用**\n\n"
+                f"错误: `{error_msg}`\n\n"
+                f"请确认:\n"
+                f"1. Ollama 已安装并正在运行\n"
+                f"2. 模型已拉取: `ollama pull qwen3:8b`\n"
+                f"3. Python 依赖已安装: `pip install -r requirements.txt`"
+            )
+            st.session_state.chat_history.append({"role": "assistant", "content": fallback})
+            st.rerun()
+
+        # ── 调用 Agent ────────────────────────
+        with st.spinner("🤖 Agent 思考中..."):
+            try:
+                result = st.session_state.agent_session.chat(actual_input)
+            except Exception as e:
+                result = {"error": str(e), "tool_results": [], "analysis": "", "recommendation": ""}
+
+        # ── 构建回复消息 ──────────────────────
+        st.session_state.last_action_drafts = result.get("action_drafts", [])
+        st.session_state.last_diagnosis = result.get("diagnosis", {})
+        st.session_state.last_question = actual_input
+        if result.get("error") and not result.get("tool_results"):
+            reply = f"❌ **执行出错**: {result['error']}"
+        else:
+            parts = []
+
+            # 数据查询摘要
+            tool_results = result.get("tool_results", [])
+            if tool_results:
+                parts.append("### 🔍 数据查询\n")
+                for i, tr in enumerate(tool_results, 1):
+                    status_icon = "✅" if tr.get("success") else "❌"
+                    parts.append(f"{status_icon} **{tr.get('tool', '?')}**: {tr.get('summary', '')}")
+                parts.append("")
+
+            # 分析结果
+            analysis = result.get("analysis", "")
+            if analysis:
+                parts.append(analysis)
+                parts.append("")
+
+            # 策略建议
+            recommendation = result.get("recommendation", "")
+            if recommendation:
+                parts.append(recommendation)
+
+            action_drafts = result.get("action_drafts", [])
+            if action_drafts:
+                parts.append("\n### 📝 可确认的运营任务草稿\n")
+                for action in action_drafts:
+                    priority = action.get("priority", "P2")
+                    title = action.get("title", "运营策略")
+                    parts.append(f"- **[{priority}] {title}**")
+                    if action.get("audience"):
+                        parts.append(f"  - 目标人群：{action['audience']}")
+                    if action.get("channel"):
+                        parts.append(f"  - 渠道：{action['channel']}")
+                    if action.get("budget") is not None:
+                        parts.append(f"  - 预算：{action['budget']}")
+                    if action.get("duration_days") is not None:
+                        parts.append(f"  - 周期：{action['duration_days']} 天")
+                    parts.append("  - 状态：待用户确认")
+
+            reply = "\n".join(parts)
+
+        if not reply.strip():
+            reply = "⚠️ Agent 未返回有效结果，请重试。"
+
+        # 添加助手消息到历史
+        st.session_state.chat_history.append({"role": "assistant", "content": reply})
+
+        # 限制历史长度（每轮 = user + assistant，保留最近 20 轮）
+        max_messages = 40
+        if len(st.session_state.chat_history) > max_messages:
+            st.session_state.chat_history = st.session_state.chat_history[-max_messages:]
+
+        st.rerun()
+
+    # ── 运营任务：编辑、保存、确认/驳回 ─────────────────
+    with st.expander("📝 运营任务中心", expanded=bool(st.session_state.get("last_action_drafts"))):
+        drafts = st.session_state.get("last_action_drafts", [])
+        if drafts:
+            st.caption("以下任务来自最近一次 Agent 诊断，保存后仍需人工确认，不会自动触达客户。")
+            for idx, draft in enumerate(drafts):
+                key_prefix = f"draft_{idx}"
+                title = st.text_input("任务标题", value=str(draft.get("title", "运营策略")), key=f"{key_prefix}_title")
+                audience = st.text_input("目标人群", value=str(draft.get("audience", "待确认")), key=f"{key_prefix}_audience")
+                channel = st.text_input("触达渠道", value=str(draft.get("channel", "待确认")), key=f"{key_prefix}_channel")
+                budget_default = float(draft.get("budget") or 0)
+                budget = st.number_input("预算", min_value=0.0, value=budget_default, step=100.0, key=f"{key_prefix}_budget")
+                duration = st.number_input("执行周期（天）", min_value=1, max_value=90, value=int(draft.get("duration_days") or 7), key=f"{key_prefix}_duration")
+                if st.button("保存为草稿", key=f"{key_prefix}_save", use_container_width=True):
+                    task = create_task(
+                        {**draft, "title": title, "audience": audience, "channel": channel,
+                         "budget": budget, "duration_days": duration},
+                        question=st.session_state.get("last_question", ""),
+                        source_diagnosis=st.session_state.get("last_diagnosis", {}),
+                    )
+                    st.success(f"任务 {task['task_id']} 已保存为草稿")
+                    st.rerun()
+        else:
+            st.info("完成一次 Agent 诊断后，这里会出现可编辑的运营任务草稿。")
+
+        tasks = load_tasks()
+        if tasks:
+            st.divider()
+            st.caption(f"已保存任务：{len(tasks)} 条")
+            for task in tasks[:10]:
+                task_id = task.get("task_id", "?")
+                status = task.get("status", "draft")
+                st.markdown(f"**[{status}] {task.get('title', '未命名任务')}** · `{task_id}`")
+                st.caption(f"人群：{task.get('audience', '未设置')} · 渠道：{task.get('channel', '未设置')} · 预算：{task.get('budget', 0)}")
+                col_confirm, col_reject = st.columns(2)
+                with col_confirm:
+                    if status == "draft" and st.button("确认任务", key=f"confirm_{task_id}", use_container_width=True):
+                        update_task(task_id, {"status": "confirmed"})
+                        st.rerun()
+                with col_reject:
+                    if status == "draft" and st.button("驳回任务", key=f"reject_{task_id}", use_container_width=True):
+                        update_task(task_id, {"status": "rejected"})
+                        st.rerun()
+                if status == "confirmed":
+                    with st.form(f"result_form_{task_id}"):
+                        st.caption("回填实验结果（实验组 / 对照组）")
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            treatment_users = st.number_input("实验组人数", min_value=1, value=100, key=f"tu_{task_id}")
+                            treatment_orders = st.number_input("实验组订单", min_value=0, value=10, key=f"to_{task_id}")
+                            treatment_revenue = st.number_input("实验组收入", min_value=0.0, value=1000.0, step=100.0, key=f"tr_{task_id}")
+                        with c2:
+                            control_users = st.number_input("对照组人数", min_value=1, value=100, key=f"cu_{task_id}")
+                            control_orders = st.number_input("对照组订单", min_value=0, value=8, key=f"co_{task_id}")
+                            control_revenue = st.number_input("对照组收入", min_value=0.0, value=800.0, step=100.0, key=f"cr_{task_id}")
+                        with c3:
+                            cost = st.number_input("活动成本", min_value=0.0, value=float(task.get("budget") or 0), step=100.0, key=f"cost_{task_id}")
+                        submitted = st.form_submit_button("提交结果并完成任务", use_container_width=True)
+                    if submitted:
+                        try:
+                            result = evaluate_experiment(
+                                treatment_users, treatment_orders, treatment_revenue,
+                                control_users, control_orders, control_revenue, cost,
+                            )
+                            complete_task(task_id, result)
+                            st.success(f"任务 {task_id} 已完成，效果结果已保存")
+                            st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
+                if status == "completed" and task.get("result"):
+                    result = task["result"]
+                    roi = result.get("roi")
+                    roi_text = f"{roi:.1%}" if roi is not None else "未计算（成本为 0）"
+                    st.caption(
+                        f"实验组转化率：{result.get('treatment_conversion', 0):.2%} · "
+                        f"对照组：{result.get('control_conversion', 0):.2%} · "
+                        f"提升：{result.get('conversion_uplift_pp', 0):.2f} 个百分点 · ROI：{roi_text}"
+                    )
+
+    # ── 侧边栏: 会话控制 ────────────────────────
+    with st.sidebar:
+        st.divider()
+        st.subheader("💬 对话控制")
+
+        agent_status = "✅ Agent 就绪" if st.session_state.agent_available else "⚠️ Agent 不可用"
+        st.caption(agent_status)
+
+        if st.button("🗑️ 清空对话", use_container_width=True):
+            st.session_state.chat_history = []
+            if st.session_state.agent_session:
+                st.session_state.agent_session.clear()
+            st.rerun()
+
+        if st.session_state.agent_available:
+            session = st.session_state.agent_session
+            turn_count = len(session.history) // 2 if session else 0
+            st.caption(f"当前对话轮数: {turn_count}")
+
+    # ── 空状态引导 ──────────────────────────────
+    if not st.session_state.chat_history:
+        with chat_container:
+            with st.chat_message("assistant"):
+                st.markdown("""
+                👋 你好！我是 **Olist AI 运营顾问**。
+
+                我基于 **LangGraph Agent + Ollama (Qwen3:8b)** 运行，可以:
+
+                - 📊 **查询数据**: 自动调取地区销量、趋势、支付、分群、RFM、热销品类 6 类数据
+                - 🔍 **分析发现**: 基于真实数据给出关键洞察
+                - 💡 **策略建议**: 生成 P0-P2 优先级运营策略，含行动点和预期效果
+                - 🔄 **多轮追问**: 支持连续追问，深入探讨某个方向
+
+                点击上方快捷问题开始，或在输入框自由提问 👆
+                """)

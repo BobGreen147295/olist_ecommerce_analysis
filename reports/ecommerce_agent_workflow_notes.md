@@ -35,7 +35,7 @@
 在 `D:/olist_project` 目录下运行：
 
 ```bash
-.venv\Scripts\python.exe src\ecommerce_agent_workflow.py
+.venv\Scripts\python.exe src\agent\run_agent.py "分析最近半年的销售趋势"
 ```
 
 运行后会生成：
@@ -56,4 +56,3 @@ reports/agent_workflow_result.json
 - 接入广告数据，新增 ROI 投放智能体。
 - 接入商品和库存数据，新增爆品/滞销品智能体。
 - 接入评价文本，新增差评原因分析智能体。
-

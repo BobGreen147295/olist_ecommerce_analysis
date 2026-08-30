@@ -1,440 +1,217 @@
-# 巴西 Olist 海外电商AI运营增长分析系统项目
+# Olist 电商 AI 运营分析系统
 
-> 🔥 **亮点项目**：本项目不仅包含完整的数据分析流程，还创新性地集成了 **AI 运营智能系统**（规则引擎 + LLM + 机器学习），能够根据实时数据自动生成运营诊断和策略建议，展现数据分析到智能决策的完整链路。
+> 基于 **LangGraph + Ollama (Qwen3) + XGBoost** 的 LLM Agent 运营诊断系统。自然语言提问 → Agent 自主查询数据 → 输出带证据诊断 → 生成可确认的运营任务草稿。
 
-## 🌟 项目核心亮点
+---
 
-### 1. AI 增强版运营智能系统（重点功能）
-- **多智能体协作架构**：经营监控、客户分层、地区增长、支付转化、活动策略等多个专业智能体协同工作
-- **规则引擎**：核心业务逻辑基于规则引擎实现，保证结果的确定性和可解释性
-- **LLM推理智能体**：集成大语言模型，支持自然语言推理和深度业务分析
-- **机器学习预测**：使用XGBoost模型进行客户流失预测，自动识别高风险客户群体
-- **策略自动生成**：根据不同客户群体和地区，自动生成针对性的运营策略
-- **交互式聊天模式**：支持与智能体对话，查询数据分析结果
+## 🏗️ 混合 AI 架构
 
-### 2. 完整的数据分析流程
-- ✅ 数据清洗与预处理（10万+条数据）
-- ✅ 多维度数据分析（用户、销售、时间、地区）
-- ✅ 13张可视化图表自动生成
-- ✅ 完整的业务指标体系
+系统采用**三层混合架构**，每层用最合适的技术：
 
-### 3. 机器学习建模能力
-- 🎯 **KMeans 用户分群**：精准识别高价值用户群体
-- 📊 **逻辑回归购买预测**：预测用户购买行为，识别潜在客户
-- 📈 **线性回归销量预测**：预测各地区销量趋势，辅助库存管理
-- 💎 **RFM 客户价值分析**：科学的客户分层体系
-- 🤖 **XGBoost 流失预测**：机器学习预测客户流失概率
+```
+用户: "圣保罗州最近销量怎么样？"
+         │
+┌────────▼──────────────────────────────────┐
+│  🧠 LLM 推理层 (Ollama + Qwen3:8b)        │
+│  理解问题、选择工具、分析数据、生成策略       │
+│  约束：System Prompt 禁止无数据支撑的建议    │
+└────────┬──────────────────────────────────┘
+         │ 只做推理，不碰原始数据
+┌────────▼──────────────────────────────────┐
+│  ⚙️ 确定性工具层 (Pandas，6 个工具)         │
+│  数据查询 100% 准确，零幻觉                 │
+│  地区/趋势/支付/分群/RFM/流失/品类           │
+└────────┬──────────────────────────────────┘
+         │ 只查数据，不做决策
+┌────────▼──────────────────────────────────┐
+│  📊 ML 模型层 (KMeans + XGBoost)           │
+│  用户分群 + 流失预测，数值可验证             │
+└───────────────────────────────────────────┘
+```
 
-### 4. 创新性的爬虫应用
-- 🕷️ 爬取巴西各地区人口数据
-- 📊 结合销售数据计算人均销售额
-- 🎯 识别高消费潜力地区，优化区域策略
+**设计原则**：LLM 不碰数据，数据不走 LLM。确定性工具打底，LLM 只负责它最擅长的事——理解语言和生成策略。
 
-## 📊 核心业务成果
+---
 
-| 指标 | 数值 | 说明 |
-|------|------|------|
-| 总订单数 | 99,441 | 2016-2018年全部订单 |
-| 总销售额 | R$16,008,872.12 | 巴西雷亚尔 |
-| 客户数 | 99,441 | 独立客户数 |
-| 平均客单价 | R$160.99 | 反映消费水平 |
-| 高价值客户 | 3,236 人 | RFM评分最高群体 |
-| 潜在高价值客户 | 21,730 人 | 转化潜力最大 |
-| 高流失风险客户 | 41,674 人 | XGBoost预测结果 |
+## 🤖 Agent 工作流
 
-## 🛠️ 技术栈
+```mermaid
+graph TD
+    User(["👤 用户自然语言"]) --> Agent
 
-| 类别 | 技术栈 |
-|------|--------|
-| **数据分析** | Python, Pandas, NumPy |
-| **机器学习** | Scikit-learn (KMeans, Logistic Regression, Linear Regression), XGBoost |
-| **AI 引擎** | 本地规则引擎 + LLM (OpenAI GPT-4o) + 多智能体协作架构 |
-| **可视化** | Matplotlib, Seaborn, ECharts |
-| **交互仪表盘** | Streamlit, HTML/ECharts |
-| **数据爬虫** | Requests, BeautifulSoup |
-| **数据库** | MySQL, PyMySQL |
+    subgraph Agent["LangGraph 三节点 Agent"]
+        N1["📥 fetch_data<br/>LLM 解析意图 → 选择工具 → 执行查询"]
+        N2["📊 analyze<br/>LLM 基于真实数据给出关键发现"]
+        N3["💡 recommend<br/>LLM 生成 P0-P2 策略 + 行动点 + ROI"]
+        N1 --> N2 --> N3
+    end
+
+    subgraph Tools["确定性数据工具（7 个）"]
+        T1["query_sales_by_region"]
+        T2["query_sales_trend"]
+        T3["query_payment_distribution"]
+        T4["query_user_segments"]
+        T5["query_rfm_summary"]
+        T6["query_churn_risk"]
+        T7["query_top_categories"]
+    end
+
+    N1 -->|LLM 自主选择 1-3 个| Tools
+    N3 --> Output(["📋 结构化策略报告"])
+```
+
+**7 类诊断能力**：
+
+| 场景 | 示例问题 |
+|------|---------|
+| 地区销量 | "圣保罗州最近销量怎么样" |
+| 销售趋势 | "分析最近半年的销售趋势" |
+| 用户流失 | "客户流失情况如何，怎么挽回" |
+| 支付诊断 | "支付方式分布有没有问题" |
+| 选品分析 | "哪些产品卖得好" |
+| 客户分层 | "客户分群情况怎么样" |
+
+---
 
 ## 📁 项目结构
 
 ```
 olist_project/
 ├── data/
-│   ├── raw/                          # 原始数据（4个CSV文件）
-│   └── processed/                    # 处理后数据
-│       ├── cleaned_customers.csv     # 清洗后的客户数据
-│       ├── cleaned_orders.csv        # 清洗后的订单数据
-│       ├── cleaned_payments.csv      # 清洗后的支付数据
-│       ├── cleaned_order_items.csv   # 清洗后的订单项数据
-│       ├── user_clusters.csv         # KMeans用户分群结果
-│       ├── rfm_analysis.csv          # RFM客户价值分析
-│       ├── sales_trends.csv          # 销量趋势数据
-│       ├── brazil_population.csv     # 爬虫获取的人口数据
-│       └── region_analysis.csv       # 地区人均销售额分析
+│   ├── raw/                       # 原始数据（4 个 CSV）
+│   └── processed/                 # 清洗后 + 模型产出（10 个 CSV）
 │
-├── src/                              # 核心源代码
-│   ├── olist_analysis.py             # 【主分析脚本】含爬虫+清洗+分析+建模
-│   ├── olist_analysis_simple.py      # 简化版分析（无ML）
-│   ├── interactive_analysis.py       # Matplotlib交互式分析
-│   ├── generate_dashboard.py         # 生成HTML仪表盘
-│   │
-│   ├── ai_insight_engine.py          # 【AI运营分析引擎】核心AI模块
-│   │   ├── 规则引擎实现，不依赖外部API
-│   │   ├── 智能诊断逻辑
-│   │   └── 策略自动生成
-│   │
-│   ├── ecommerce_agent_workflow.py   # 【多智能体工作流】规则引擎版
-│   │   ├── 5个专业智能体协同工作
-│   │   ├── 支持聊天模式交互
-│   │   └── 自动生成分析报告
-│   │
-│   ├── enhanced_agent_workflow.py    # 【AI增强版工作流】🔥 重点
-│   │   ├── 规则引擎（确定性逻辑）
-│   │   ├── LLM推理智能体（自然语言分析）
-│   │   ├── XGBoost流失预测（机器学习）
-│   │   └── 多智能体协作架构
-│   │
-│   └── generate_ai_operations_system.py  # 【生成AI运营系统】
-│       ├── 读取处理后数据
-│       ├── 构建动态筛选逻辑
-│       └── 生成交互式HTML系统
+├── src/
+│   ├── crawler.py                 # 爬虫：巴西各州人口
+│   ├── data_cleaning.py           # 数据清洗管道
+│   ├── analysis_rfm.py            # RFM 客户价值分析
+│   ├── analysis_geo.py            # 地理分析（人均销售额）
+│   ├── analysis_payment.py        # 支付方式分析
+│   ├── model_clustering.py        # KMeans 用户分群
+│   ├── model_churn.py             # XGBoost 流失预测
+│   ├── visualization.py           # 图表生成（13 张）
+│   └── agent/                     # 🤖 Agent 模块
+│       ├── tools.py               # 6 个数据查询工具 + TOOL_REGISTRY
+│       ├── agent_graph.py         # LangGraph 三节点编排
+│       └── run_agent.py           # CLI 入口
 │
-├── dashboard/                        # 面试演示入口
-│   ├── dashboard.py                  # Streamlit交互仪表盘
-│   ├── dashboard.html                # HTML仪表盘
-│   ├── static_dashboard.html         # 静态展示页
-│   └── ai_operations_system.html     # 【AI运营智能系统】主演示入口
+├── dashboard/
+│   ├── dashboard.py               # Streamlit 仪表盘
+│   └── ai_operations_system.html  # 静态诊断页面
 │
-├── reports/                          # 文档和面试材料
-│   ├── ai_operations_interview_notes.md  # AI系统面试讲解指南
-│   ├── interview_demo_script.md      # 完整面试演示脚本
-│   ├── agent_workflow_report.md      # 多智能体分析报告
-│   └── enhanced_workflow_report.md   # AI增强版分析报告
-│
-├── output/charts/                    # 自动生成的13张图表
-│   ├── chart_01_各州用户数.png
-│   ├── chart_02_城市用户TOP20.png
-│   ├── chart_03_城市购买力TOP15.png
-│   ├── chart_04_各州购买力.png
-│   ├── chart_05_支付方式.png
-│   ├── chart_06_一周订单量.png
-│   ├── chart_07_一周销售额.png
-│   ├── chart_08_24小时订单量.png
-│   ├── chart_09_24小时销售额.png
-│   ├── chart_10_订单状态.png
-│   ├── chart_11_商品单价TOP15.png
-│   ├── chart_12_月度订单趋势.png
-│   └── chart_13_各地区人均销售额.png
-│
-├── README.md                         # 项目说明文档
-└── requirements.txt                  # 依赖配置
+├── web/                           # 静态展示（index.html + CSS/JS）
+├── reports/                       # 面试材料
+├── output/charts/                 # 13 张自动生成图表
+├── PRD.md                         # 产品需求文档
+└── requirements.txt
 ```
 
-## 🚀 快速开始
-
-### 环境准备
-```bash
-# 克隆项目
-git clone https://github.com/BobGreen147295/olist_ecommerce_analysis.git
-cd olist_ecommerce_analysis
-
-# 安装依赖
-pip install -r requirements.txt
-```
-
-### 运行完整分析
-```bash
-python src/olist_analysis.py
-```
-
-**输出内容**：
-- ✅ 数据清洗完成（4个CSV文件）
-- ✅ 13张可视化图表生成
-- ✅ 机器学习模型训练（用户分群、购买预测、销量预测、RFM分析）
-- ✅ 所有结果保存到 `data/processed/`
-
-### 启动交互式仪表盘
-
-#### 方案1：AI增强版多智能体工作流（🔥 推荐面试使用）
-```bash
-# 运行增强版工作流（含LLM+ML）
-python src/enhanced_agent_workflow.py
-```
-
-**系统特性**：
-- 多智能体协作：经营监控、客户分层、LLM推理、流失预测
-- 机器学习预测：XGBoost模型预测客户流失概率
-- LLM推理：集成GPT-4o进行自然语言深度分析
-- 自动生成结构化报告和JSON数据
-
-**运行示例**：
-```
-[P1] 客户流失预测智能体
-   Title: 识别出41,674名高流失风险客户
-   Evidence: 模型预测高风险客户41,674人（占比42.2%）
-   Recommendation: 高风险客户建议优先触达，提供专属优惠券
-
-[P1] LLM推理智能体 (Mock模式)
-   Title: 业务增长分析 - LLM增强版
-   Evidence: 总收入R$16,008,683.49，建议深入分析客户生命周期价值
-```
-
-#### 方案2：规则引擎版工作流（基础版）
-```bash
-# 运行基础版工作流（纯规则引擎）
-python src/ecommerce_agent_workflow.py
-```
-
-**系统特性**：
-- 5个专业智能体协同工作
-- 支持交互式聊天模式
-- 不需要外部API，本地运行
-
-#### 方案3：AI 运营智能系统（可视化版）
-```bash
-# 生成动态系统
-python src/generate_ai_operations_system.py
-
-# 打开演示
-# 浏览器访问：dashboard/ai_operations_system.html
-```
-
-**系统特性**：
-- 左侧筛选器：地区、客户分层、月份、活动预算
-- 右侧实时更新：经营指标、趋势图、AI诊断、策略建议
-- 活动模拟器：输入预算，预测效果
-
-#### 方案4：Streamlit 交互仪表盘
-```bash
-streamlit run dashboard/dashboard.py
-# 访问：http://localhost:8501
-```
-
-#### 方案5：HTML 仪表盘
-```bash
-python src/generate_dashboard.py
-# 打开：dashboard/dashboard.html
-```
-
-## 🎯 功能模块详解
-
-### 1. AI 运营智能系统（核心亮点）
-
-#### 技术实现
-```python
-# ai_insight_engine.py 核心逻辑
-class AIOperationInsightEngine:
-    def build_global_insights(self, total_revenue, top_regions, ...):
-        """根据全局指标生成AI诊断"""
-        
-    def strategy_for_segment(self, segment, budget):
-        """根据客户群体和预算生成策略"""
-```
-
-#### 功能特性
-- ✅ **动态数据聚合**：根据筛选条件实时计算
-- ✅ **智能诊断引擎**：规则驱动，输出可解释的诊断结果
-- ✅ **策略自动生成**：基于数据特征，生成针对性策略
-- ✅ **活动模拟**：多场景预算模拟，预测ROI
-
-#### 面试展示要点
-> "这个系统的核心不是简单地展示图表，而是将数据分析结果**转化为可执行的运营动作**。它模拟了一个真实的AI运营助理，能够根据数据自动判断问题并给出建议。"
-
-### 2. 数据清洗与预处理
-
-**处理内容**：
-- 缺失值检测与处理
-- 时间格式标准化
-- 异常订单过滤（2016-2018年有效订单）
-- 数据质量验证
-
-**代码示例**：
-```python
-# 时间字段统一化
-orders[col] = pd.to_datetime(orders[col], errors='coerce')
-
-# 有效订单过滤
-orders = orders[(orders['order_purchase_timestamp'] >= '2016-01-01') &
-                (orders['order_purchase_timestamp'] <= '2018-12-31')]
-```
-
-### 3. 机器学习建模
-
-#### 3.1 KMeans 用户分群
-```python
-# 用户特征
-features = user_data[['order_count', 'total_spent']]
-
-# KMeans聚类
-kmeans = KMeans(n_clusters=3, random_state=42)
-user_data['cluster'] = kmeans.fit_predict(scaled_features)
-
-# 聚类结果
-cluster_labels = {0: '普通用户', 1: '高消费用户', 2: '高频用户'}
-```
-
-#### 3.2 逻辑回归购买预测
-```python
-# 二分类模型
-model = LogisticRegression()
-model.fit(X_train, y_train)
-
-# 预测用户是否会在2018年购买
-y_pred = model.predict(X_test)
-```
-
-#### 3.3 线性回归销量预测
-```python
-# 回归模型
-model = LinearRegression()
-model.fit(X_train, y_train)
-
-# 预测各地区销量趋势
-y_pred = model.predict(X_test)
-```
-
-#### 3.4 RFM 客户价值分析
-```python
-# RFM评分
-rfm_data['r_score'] = pd.cut(recency, bins=[...], labels=[5,4,3,2,1])
-rfm_data['f_score'] = pd.cut(frequency, bins=[...], labels=[1,2,3,4,5])
-rfm_data['m_score'] = pd.cut(monetary, bins=[...], labels=[1,2,3,4,5])
-
-# 客户分层
-rfm_data['customer_segment'] = rfm_data.apply(segment_customer, axis=1)
-# 输出：高价值客户、潜在高价值客户、一般价值客户、低价值客户
-```
-
-### 4. 数据爬虫
-
-```python
-# 爬取巴西人口数据
-url = "https://www.worldometers.info/world-population/brazil-population/"
-response = requests.get(url, timeout=10)
-
-# 结合销售数据计算人均销售额
-merged_data["sales_per_capita"] = merged_data["sales"] / merged_data["population"] * 1000000
-```
-
-### 5. 数据可视化
-
-**13张图表覆盖**：
-- 📍 用户地理分布（州、市）
-- 💰 销售能力分析（城市、州）
-- 📅 时间维度分析（周、小时、月）
-- 💳 支付方式分析
-- 📦 商品价格分析
-- 🌍 地区人均销售额（结合爬虫数据）
-
-## 💼 运营建议与业务价值
-
-### 地区策略
-- **核心区域**：SP、RJ、MG 占总销售额的65%以上
-- **增长潜力**：其他地区可根据人均销售额评估投放ROI
-- **资源配置**：优先在核心区域投放广告和活动
-
-### 客户运营
-| 客户群体 | 策略建议 | 预期效果 |
-|---------|---------|---------|
-| 高价值客户 | 会员权益、专属优惠、复购激励 | 提升LTV |
-| 潜在高价值客户 | 限时优惠、关联推荐、新品首发 | 促进转化 |
-| 一般价值客户 | 定期触达、促销活动提醒 | 提升频次 |
-| 低价值客户 | 自动化邮件、控制补贴成本 | 降本增效 |
-
-### 支付优化
-- 信用卡占比最高，设计分期免息活动
-- 优化其他支付方式体验，提升转化率
-
-## 📝 面试展示指南
-
-### 展示顺序（建议10-15分钟）
-
-#### 1. 开场（1分钟）
-> "这是一个基于巴西Olist真实电商数据的全流程分析项目，亮点是集成了AI运营智能系统，能够根据数据自动生成运营诊断和策略建议。"
-
-#### 2. 数据流程（2分钟）
-- 展示原始数据（4个CSV，10万+条）
-- 说明数据清洗过程
-- 展示清洗后的数据结构
-
-#### 3. 核心指标（2分钟）
-- 总订单数、销售额、客户数
-- 重点强调：人均销售额（结合爬虫数据）
-
-#### 4. 可视化图表（3分钟）
-- 月度订单趋势
-- 地区销量TOP10
-- 支付方式分布
-- 一周订单规律
-
-#### 5. 机器学习（3分钟）
-- **KMeans分群**：如何识别高价值用户
-- **RFM分析**：客户分层体系
-- **预测模型**：购买预测和销量预测的应用场景
-
-#### 6. AI运营系统（4分钟）⭐ 重点
-- **动态演示**：切换不同地区和客户群体，观察指标变化
-- **智能诊断**：展示AI如何判断经营状况
-- **策略生成**：展示针对不同群体的运营建议
-- **活动模拟**：输入预算，预测效果
-
-> "这个系统的价值在于：不是让面试官看静态图表，而是**实时演示数据驱动的决策过程**，展示数据分析如何转化为可执行的运营动作。"
-
-#### 7. 技术亮点总结（1分钟）
-- 数据处理能力（10万+条数据清洗）
-- 机器学习建模（4种算法）
-- 爬虫应用（外部数据获取）
-- AI引擎设计（规则引擎实现）
-- 可视化展示（13张图表 + 3种仪表盘）
-
-### 面试问答准备
-
-**Q1：这个项目和普通的数据分析项目有什么区别？**
-> A：除了常规的数据分析和可视化，我还集成了AI运营智能系统。这个系统的核心是**将数据转化为运营动作**，它会根据数据自动诊断经营状况，并生成针对性的策略建议。
-
-**Q2：AI运营系统是怎么实现的？**
-> A：使用的是**本地规则引擎**，不依赖外部API。核心逻辑是：
-> 1. 根据筛选条件聚合数据
-> 2. 定义规则判断经营状况（如高价值客户占比<5%为异常）
-> 3. 根据规则生成策略建议
-> 这样设计的好处是：**可解释性强、运行稳定、不需要API Key**
-
-**Q3：机器学习模型的实际应用场景？**
-> - **用户分群**：识别高价值用户，指导精准营销预算分配
-> - **购买预测**：提前识别潜在流失客户，主动触达挽留
-> - **销量预测**：指导库存管理，避免积压或断货
-> - **RFM分析**：建立科学的客户分层体系，实现差异化运营
-
-**Q4：爬虫数据的价值？**
-> A：爬取的巴西人口数据让我能够计算**人均销售额**，这样可以识别出人口基数小但消费能力强的地区，为区域扩张策略提供数据支持。
-
-## 🔮 可扩展方向
-
-- [ ] 接入店铺后台API，实现每日自动更新
-- [ ] 接入大模型，自动生成运营日报
-- [ ] 增加商品维度分析（爆品识别、滞销品预警）
-- [ ] 接入广告投放数据，计算投放ROI
-- [ ] 加入评论文本分析，提取用户反馈洞察
-
-## 📚 相关文件说明
-
-| 文件 | 说明 | 面试重要性 |
-|------|------|----------|
-| `ai_insight_engine.py` | AI运营分析引擎 | ⭐⭐⭐⭐⭐ 核心亮点 |
-| `generate_ai_operations_system.py` | 动态系统生成器 | ⭐⭐⭐⭐ 演示效果 |
-| `ai_operations_system.html` | 主演示入口 | ⭐⭐⭐⭐⭐ 面试必看 |
-| `olist_analysis.py` | 完整分析流程 | ⭐⭐⭐ 技术深度 |
-| `rfm_analysis.csv` | RFM分析结果 | ⭐⭐⭐ 业务理解 |
-
-## 👤 作者信息
-
-- **项目类型**：数据分析实习项目
-- **技术栈**：Python + Pandas + Scikit-learn + Streamlit + MySQL
-- **GitHub**：https://github.com/BobGreen147295/olist_ecommerce_analysis
-
-## 📄 许可证
-
-本项目仅供学习和面试展示使用。
+**8 个独立模块**，每个可单独运行和测试。原 1000 行的 God Script 已消除。
 
 ---
 
-💡 **提示**：面试时重点演示AI运营智能系统，它能够帮助你脱颖而出！
+## 📊 核心数据
+
+| 指标 | 数值 |
+|------|------|
+| 总订单数 | 99,441 |
+| 总销售额 | R$ 16,008,872 |
+| 总客户数 | 99,441 |
+| 平均客单价 | R$ 160.99 |
+| RFM 高价值客户 | 3,236 人 |
+| 潜在高价值客户 | 21,730 人 |
+| Agent 数据工具 | 7 个 |
+| 分析图表 | 13 张 |
+| 代码模块 | 12 个（8 分析 + 3 Agent + 1 爬虫） |
+
+> 注：XGBoost 流失预测的标签基于 RFM 分数构造（非真实流失标签），用于演示模型流程。生产环境中接入真实流失数据后可直接替换。
+
+---
+
+## 🛠️ 技术栈
+
+| 类别 | 技术 | 说明 |
+|------|------|------|
+| Agent 编排 | LangGraph | 有向图状态机，三节点工作流 |
+| LLM 推理 | Ollama + Qwen3:8b | 本地开源，零 API 成本 |
+| 数据处理 | Pandas, NumPy | 10 万级订单 |
+| 用户分群 | KMeans (scikit-learn) | 3 类聚类 |
+| 流失预测 | XGBoost | 高/中/低风险识别 |
+| 可视化 | Matplotlib + Streamlit | 13 图表 + 交互仪表盘 |
+| 爬虫 | Requests + BeautifulSoup | 人口数据采集 |
+| Web | 静态 HTML + ECharts | 零依赖演示 |
+
+---
+
+## 🚀 快速开始
+
+```bash
+# 1. 安装 Ollama 并拉取模型
+ollama pull qwen3:8b
+
+# 2. 安装 Python 依赖
+pip install -r requirements.txt
+
+# 3. 运行 Agent
+python src/agent/run_agent.py "分析最近半年的销售趋势"
+
+# 如需重新生成全部清洗、分析和模型产物
+python src/run_pipeline.py
+```
+
+**运行独立模块**：
+
+```bash
+python src/data_cleaning.py      # 数据清洗
+python src/analysis_rfm.py       # RFM 分析
+python src/model_churn.py        # 流失预测
+python src/visualization.py      # 生成图表
+streamlit run dashboard/dashboard.py  # 交互仪表盘
+```
+
+---
+
+## 💼 面试问答
+
+### Q1：你说这是 Agent，和规则引擎有什么区别？
+
+规则引擎是预先写好的 if-else 树——"如果提到圣保罗就调地区查询，如果提到趋势就调趋势查询"。遇到新说法就匹配不上。
+
+我的 Agent 是 **LLM 自主决策**：用户可以用任何自然语言方式提问，LLM 理解意图后自己决定调用哪些工具、怎么组合。6 个工具是插拔式的——新增一个品类分析工具，LLM 自动就会用，不用改任何 if-else。
+
+### Q2：为什么用 LangGraph？
+
+LangChain Chain 是线性的 A→B→C，没有分支。LangGraph 用有向图定义工作流，每个节点是独立决策单元。当前是三节点线性流（fetch→analyze→recommend），但架构天然支持扩展——比如以后加多轮对话，analyze 发现数据不够可以**循环回** fetch_data 再查一次，这在 Chain 里做不到。
+
+### Q3：LLM 产生幻觉怎么办？
+
+三层防护：
+1. **数据层不下场**：6 个数据工具是纯 Pandas 查询，不经过 LLM。查出来的数字 100% 准确。
+2. **Prompt 硬约束**：System Prompt 明确规定「每条建议必须引用工具返回的真实数据」，不允许自由发挥。
+3. **分层隔离**：LLM 出问题不会污染数据层和 ML 层，这两层可独立产出分析报告。
+
+### Q4：XGBoost AUC 0.90+ 是怎么来的？
+
+诚实地说，Olist 数据集没有真实流失标签。我基于 RFM 分数构造了代理标签（rfm_score < 6 视为流失），训练得到 AUC 0.90+。这说明特征有效，但不能等同于真实流失预测准确率。PRD 和代码注释中已说明这一点。接入真实流失数据后训练流程无需改动。
+
+---
+
+## 🔮 扩展方向
+
+- [x] LangGraph 三节点 Agent
+- [x] 模块化拆分（8 个独立模块）
+- [x] KMeans + XGBoost + RFM 建模
+- [x] 结构化策略输出（P0-P2 + 行动点 + ROI）
+- [ ] MCP Server 化：将 6 个数据工具包装为 Model Context Protocol 服务
+- [ ] RAG 向量库：历史运营报告入库，相似案例检索
+- [ ] Web Agent 界面：在现有 `web/` 模板基础上重建聊天 UI
+- [ ] 真实流失标签：替换 RFM 代理标签
+- [ ] Plotly 迁移：13 张图从 matplotlib 迁到交互式 Plotly
+
+---
+
+## 👤 信息
+
+- 项目类型：数据分析 + LLM Agent 全栈项目
+- 技术栈：Python / LangGraph / Ollama / XGBoost / Streamlit
+- GitHub：[BobGreen147295/olist_ecommerce_analysis](https://github.com/BobGreen147295/olist_ecommerce_analysis)

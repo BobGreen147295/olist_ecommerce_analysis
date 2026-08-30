@@ -38,7 +38,7 @@
 ### 4.1 运行 AI 增强版工作流
 
 ```bash
-python src/enhanced_agent_workflow.py
+python src/agent/run_agent.py "分析最近半年的销售趋势"
 ```
 
 ### 4.2 展示输出结果

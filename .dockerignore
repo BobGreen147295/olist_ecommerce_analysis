@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.pyc
+output/charts
+data/processed/operation_tasks.json
+data/processed/operation_tasks.json.tmp

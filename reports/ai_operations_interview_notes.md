@@ -30,9 +30,8 @@ D:/olist_project/dashboard/ai_operations_system.html
 
 讲技术实现：
 
-“技术上，我把它拆成两层：`src/ai_insight_engine.py` 是智能分析逻辑，把指标转成业务建议；`src/generate_ai_operations_system.py` 负责读取清洗后的数据，生成动态运营系统。这样后续可以很容易接入真实店铺 API 或大模型 API。”
+“技术上，我把它拆成数据清洗/分析建模层和 Agent 展示层：`src/data_cleaning.py` 负责生成事实数据，`src/analysis_rfm.py`、`src/model_clustering.py` 等负责分析建模，`src/agent/agent_graph.py` 负责理解问题、调用确定性工具并生成运营建议。这样后续可以很容易接入真实店铺 API 或大模型 API。”
 
 收尾：
 
 “如果放到真实业务里，这个系统可以每天自动更新，生成运营日报、活动复盘和客户触达建议。后续接入大模型后，还可以自动生成私域文案、优惠券策略和差评原因分析。”
-

@@ -13,9 +13,14 @@ scikit-learn>=1.0.0
 xgboost>=1.5.0
 
 # LLM和AI智能体
-openai>=1.0.0
 langchain>=0.1.0
-langchain-openai>=0.0.2
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-ollama>=0.2.0
+langchain-openai>=0.3.0
+
+# 交互式图表（visualization.py）
+plotly>=5.18.0
 
 # 爬虫
 requests>=2.26.0
@@ -27,3 +32,6 @@ cryptography>=3.4.0
 
 # 交互式仪表盘
 streamlit>=1.0.0
+
+# Web 后端
+flask>=3.0.0
