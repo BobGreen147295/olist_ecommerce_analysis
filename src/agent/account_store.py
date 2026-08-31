@@ -223,7 +223,7 @@ def load_messages(conversation_id: str, username: str) -> list[dict[str, str]]:
     try:
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT m.role, m.content, m.created_at FROM chat_messages m "
+            f"SELECT m.message_id, m.role, m.content, m.created_at FROM chat_messages m "
             f"JOIN chat_conversations c ON c.conversation_id = m.conversation_id "
             f"WHERE m.conversation_id = {placeholder} AND c.username = {placeholder} "
             f"ORDER BY m.created_at ASC, m.message_id ASC",
@@ -231,18 +231,22 @@ def load_messages(conversation_id: str, username: str) -> list[dict[str, str]]:
         )
         rows = cursor.fetchall()
         cursor.close()
-        return [{"role": row[0], "content": row[1], "created_at": row[2]} for row in rows]
+        return [
+            {"message_id": row[0], "role": row[1], "content": row[2], "created_at": row[3]}
+            for row in rows
+        ]
     finally:
         conn.close()
 
 
-def append_message(conversation_id: str, username: str, role: str, content: str) -> None:
+def append_message(conversation_id: str, username: str, role: str, content: str) -> str:
     if role not in {"user", "assistant"}:
         raise ValueError("消息角色不合法")
     _initialize_schema()
     conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
+        message_id = uuid.uuid4().hex[:16]
         cursor.execute(
             f"SELECT conversation_id FROM chat_conversations WHERE conversation_id = {placeholder} "
             f"AND username = {placeholder}",
@@ -254,7 +258,7 @@ def append_message(conversation_id: str, username: str, role: str, content: str)
         cursor.execute(
             f"INSERT INTO chat_messages (message_id, conversation_id, role, content, created_at) "
             f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
-            (uuid.uuid4().hex[:16], conversation_id, role, content, now),
+            (message_id, conversation_id, role, content, now),
         )
         cursor.execute(
             f"UPDATE chat_conversations SET updated_at = {placeholder} WHERE conversation_id = {placeholder}",
@@ -262,5 +266,6 @@ def append_message(conversation_id: str, username: str, role: str, content: str)
         )
         conn.commit()
         cursor.close()
+        return message_id
     finally:
         conn.close()

@@ -55,6 +55,8 @@ APP_ADMIN_RESET_PASSWORD=false
 
 配置 PostgreSQL 后，应用会创建轻量账号和对话表。管理员账号由 `APP_ADMIN_USERNAME` 与 `APP_ADMIN_PASSWORD` 首次启动时初始化；`APP_REGISTRATION_CODE` 用于控制新账号注册。密码仅保存 PBKDF2 哈希，不保存明文。若需要重置已有管理员密码，将 `APP_ADMIN_RESET_PASSWORD` 临时设为 `true` 并重启一次，成功登录后立即改回 `false`。
 
+Agent 质量指标会保存调用耗时、工具成功数、结构化输出和错误状态；用户反馈只保存评分与最多 500 字的改进原因。质量看板只对管理员账号显示，不展示原始密码或数据库连接串。
+
 配置 `DATABASE_URL` 后，运营任务会保存到 PostgreSQL；未配置时继续保存到本地 JSON。应用首次连接数据库时会自动创建 `operation_tasks` 表，不需要手动执行建表 SQL。推荐使用 Supabase、Neon 等托管 PostgreSQL，并将完整连接串放入 Secrets。
 
 项目同时提供 `scripts/postgres_schema.sql` 作为可审计的初始化脚本。页面侧边栏会显示当前任务存储模式和数据库连接状态，但不会展示连接地址或账号信息。

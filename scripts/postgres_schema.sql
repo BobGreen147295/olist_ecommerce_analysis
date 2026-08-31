@@ -41,3 +41,27 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
     ON chat_messages (conversation_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS agent_feedback (
+    feedback_id VARCHAR(32) PRIMARY KEY,
+    message_id VARCHAR(32) UNIQUE NOT NULL,
+    conversation_id VARCHAR(32) NOT NULL,
+    username VARCHAR(32) NOT NULL,
+    rating INTEGER NOT NULL,
+    reason TEXT,
+    created_at VARCHAR(40) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_run_metrics (
+    run_id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32),
+    username VARCHAR(32) NOT NULL,
+    created_at VARCHAR(40) NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    tool_count INTEGER NOT NULL,
+    successful_tool_count INTEGER NOT NULL,
+    finding_count INTEGER NOT NULL,
+    action_count INTEGER NOT NULL,
+    structured_output BOOLEAN NOT NULL,
+    has_error BOOLEAN NOT NULL
+);

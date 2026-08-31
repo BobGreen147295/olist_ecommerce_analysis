@@ -28,6 +28,12 @@ from src.agent.account_store import (
     list_conversations,
     load_messages,
 )
+from src.agent.feedback_store import (
+    get_quality_summary,
+    load_feedback,
+    record_run_metric,
+    save_feedback,
+)
 from src.agent.task_store import (
     check_database_connection,
     complete_task,
@@ -122,11 +128,16 @@ def _check_usage_limit() -> bool:
 def _restore_conversation(conversation_id: str | None, username: str) -> None:
     """从数据库恢复某个会话，同时让 Agent 获得同一份多轮上下文。"""
     messages = load_messages(conversation_id, username) if conversation_id else []
-    history = [{"role": item["role"], "content": item["content"]} for item in messages]
+    history = [
+        {"message_id": item.get("message_id"), "role": item["role"], "content": item["content"]}
+        for item in messages
+    ]
     st.session_state.active_conversation_id = conversation_id
     st.session_state.chat_history = history
     if st.session_state.get("agent_session"):
-        st.session_state.agent_session.history = history.copy()
+        st.session_state.agent_session.history = [
+            {"role": item["role"], "content": item["content"]} for item in history
+        ]
 
 
 def _ensure_active_conversation(username: str, first_message: str) -> str | None:
@@ -183,6 +194,38 @@ def _experiment_verdict(result: dict) -> tuple[str, str]:
     if uplift > 0:
         return "转化有效，成本待优化", "活动带来转化提升，但当前成本仍需要优化。"
     return "建议复盘优化", "当前实验未证明策略带来正向转化增量，建议调整人群或渠道。"
+
+
+def _show_message_feedback(
+    message: dict,
+    feedback_by_message: dict,
+    conversation_id: str | None,
+    username: str,
+) -> None:
+    """在每条持久化的 Agent 回复后提供一次可追踪反馈。"""
+    message_id = message.get("message_id")
+    if not message_id or not conversation_id:
+        return
+    existing = feedback_by_message.get(message_id)
+    if existing:
+        label = "👍 已标记为有帮助" if existing["rating"] == 1 else "👎 已标记为需要改进"
+        st.caption(label)
+        return
+    up_col, down_col = st.columns(2)
+    if up_col.button("👍 有帮助", key=f"feedback_up_{message_id}", use_container_width=True):
+        save_feedback(message_id, conversation_id, username, 1)
+        st.rerun()
+    if down_col.button("👎 需要改进", key=f"feedback_down_{message_id}", use_container_width=True):
+        st.session_state.feedback_target = message_id
+        st.rerun()
+    if st.session_state.get("feedback_target") == message_id:
+        with st.form(f"feedback_form_{message_id}"):
+            reason = st.text_area("哪里需要改进？（可选）", max_chars=500)
+            submitted = st.form_submit_button("提交反馈", use_container_width=True)
+        if submitted:
+            save_feedback(message_id, conversation_id, username, -1, reason)
+            st.session_state.pop("feedback_target", None)
+            st.rerun()
 
 # ── 中文字体设置 ──────────────────────────────────
 plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC", "Arial Unicode MS"]
@@ -478,6 +521,12 @@ with tab_chat:
                 _restore_conversation(selected_id, current_username)
                 st.rerun()
 
+    active_conversation_id = st.session_state.get("active_conversation_id")
+    feedback_by_message = (
+        load_feedback(active_conversation_id, current_username)
+        if active_conversation_id and _get_setting("DATABASE_URL") else {}
+    )
+
     # ── 快捷问题 ────────────────────────────────
     st.subheader("💬 AI 运营顾问")
     st.caption("用自然语言提问，Agent 自动查询数据、分析、生成策略。支持多轮追问。")
@@ -506,6 +555,10 @@ with tab_chat:
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+                if msg["role"] == "assistant":
+                    _show_message_feedback(
+                        msg, feedback_by_message, active_conversation_id, current_username
+                    )
 
     # ── 处理快捷问题点击 ────────────────────────
     if clicked_question:
@@ -525,11 +578,14 @@ with tab_chat:
             st.rerun()
 
         active_conversation_id = _ensure_active_conversation(current_username, actual_input)
+        user_message_id = None
         if active_conversation_id:
-            append_message(active_conversation_id, current_username, "user", actual_input)
+            user_message_id = append_message(active_conversation_id, current_username, "user", actual_input)
 
         # 显示用户消息
-        st.session_state.chat_history.append({"role": "user", "content": actual_input})
+        st.session_state.chat_history.append({
+            "message_id": user_message_id, "role": "user", "content": actual_input
+        })
 
         if not st.session_state.agent_available:
             # Agent 不可用
@@ -542,9 +598,14 @@ with tab_chat:
                 f"2. 模型已拉取: `ollama pull qwen3:8b`\n"
                 f"3. Python 依赖已安装: `pip install -r requirements.txt`"
             )
-            st.session_state.chat_history.append({"role": "assistant", "content": fallback})
+            fallback_message_id = None
             if active_conversation_id:
-                append_message(active_conversation_id, current_username, "assistant", fallback)
+                fallback_message_id = append_message(
+                    active_conversation_id, current_username, "assistant", fallback
+                )
+            st.session_state.chat_history.append({
+                "message_id": fallback_message_id, "role": "assistant", "content": fallback
+            })
             st.rerun()
 
         # ── 调用 Agent ────────────────────────
@@ -559,6 +620,8 @@ with tab_chat:
         st.session_state.last_diagnosis = result.get("diagnosis", {})
         st.session_state.last_run_meta = result.get("run_meta", {})
         st.session_state.last_question = actual_input
+        if active_conversation_id:
+            record_run_metric(current_username, active_conversation_id, result.get("run_meta", {}))
         if result.get("error") and not result.get("tool_results"):
             reply = f"❌ **执行出错**: {result['error']}"
         else:
@@ -607,9 +670,14 @@ with tab_chat:
             reply = "⚠️ Agent 未返回有效结果，请重试。"
 
         # 添加助手消息到历史
-        st.session_state.chat_history.append({"role": "assistant", "content": reply})
+        assistant_message_id = None
         if active_conversation_id:
-            append_message(active_conversation_id, current_username, "assistant", reply)
+            assistant_message_id = append_message(
+                active_conversation_id, current_username, "assistant", reply
+            )
+        st.session_state.chat_history.append({
+            "message_id": assistant_message_id, "role": "assistant", "content": reply
+        })
 
         # 限制历史长度（每轮 = user + assistant，保留最近 20 轮）
         max_messages = 40
@@ -725,6 +793,42 @@ with tab_chat:
                             f"活动成本：R$ {float(result.get('cost', 0) or 0):,.0f}"
                         )
                         st.info(f"**{verdict_title}**：{verdict_detail}")
+
+    # ── 管理员质量看板 ─────────────────────────────
+    if current_user.get("role") == "admin" and _get_setting("DATABASE_URL"):
+        with st.expander("📈 Agent 质量看板", expanded=False):
+            quality = get_quality_summary()
+            all_tasks = load_tasks()
+            completed_results = [
+                task.get("result", {}) for task in all_tasks
+                if task.get("status") == "completed" and isinstance(task.get("result"), dict)
+            ]
+            adopted_count = sum(task.get("status") in {"confirmed", "completed"} for task in all_tasks)
+            total_incremental_revenue = sum(
+                float(result.get("incremental_revenue", 0) or 0) for result in completed_results
+            )
+            total_cost = sum(float(result.get("cost", 0) or 0) for result in completed_results)
+            portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost else None
+            metric_a, metric_b, metric_c, metric_d = st.columns(4)
+            metric_a.metric("Agent 调用", f"{quality['total_runs']} 次")
+            metric_b.metric("平均响应", f"{quality['avg_duration_ms']:.0f} ms")
+            metric_c.metric(
+                "工具成功率",
+                f"{quality['tool_success_rate']:.0%}" if quality["tool_success_rate"] is not None else "暂无数据",
+            )
+            metric_d.metric("结构化输出率", f"{quality['structured_output_rate']:.0%}")
+            metric_e, metric_f, metric_g, metric_h = st.columns(4)
+            metric_e.metric(
+                "用户满意度",
+                f"{quality['helpful_rate']:.0%}" if quality["helpful_rate"] is not None else "暂无反馈",
+            )
+            metric_f.metric("反馈数量", f"{quality['feedback_count']} 条")
+            metric_g.metric("任务采纳率", f"{adopted_count / len(all_tasks):.0%}" if all_tasks else "暂无任务")
+            metric_h.metric("已完成任务 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "暂无结果")
+            st.caption(
+                f"错误率：{quality['error_rate']:.0%} · 已完成实验：{len(completed_results)} 个 · "
+                f"累计增量收入：R$ {total_incremental_revenue:,.0f}"
+            )
 
     # ── 侧边栏: 会话控制 ────────────────────────
     with st.sidebar:
