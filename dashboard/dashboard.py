@@ -210,6 +210,23 @@ def _show_message_feedback(
     if existing:
         label = "👍 已标记为有帮助" if existing["rating"] == 1 else "👎 已标记为需要改进"
         st.caption(label)
+        if existing["rating"] == -1:
+            if st.button("🔄 基于反馈重新生成", key=f"regenerate_{message_id}", use_container_width=True):
+                original_question = ""
+                history = st.session_state.get("chat_history", [])
+                for index, item in enumerate(history):
+                    if item.get("message_id") != message_id:
+                        continue
+                    for previous in reversed(history[:index]):
+                        if previous.get("role") == "user":
+                            original_question = previous.get("content", "")
+                            break
+                    break
+                st.session_state.pending_regeneration = {
+                    "question": original_question or st.session_state.get("last_question", ""),
+                    "reason": existing.get("reason") or "请补充更明确的数据证据和可执行行动方案。",
+                }
+                st.rerun()
         return
     up_col, down_col = st.columns(2)
     if up_col.button("👍 有帮助", key=f"feedback_up_{message_id}", use_container_width=True):
@@ -570,21 +587,33 @@ with tab_chat:
         key="chat_input_main",
     )
 
-    # 合并输入源
+    # 合并输入源；用户授权后，负反馈要求会注入下一轮 Agent 提示。
+    regeneration = st.session_state.pop("pending_regeneration", None)
     actual_input = user_input or st.session_state.pop("pending_question", None)
+    display_input = actual_input
+    if regeneration:
+        original_question = regeneration.get("question", "")
+        feedback_reason = regeneration.get("reason", "")
+        actual_input = (
+            "请基于用户的负反馈重新回答这项运营问题。\n"
+            f"原始问题：{original_question}\n"
+            f"改进要求：{feedback_reason}\n"
+            "要求：必须引用可核验的数据证据，明确说明结论、行动方案和验证指标。"
+        )
+        display_input = f"🔄 基于反馈重新生成：{original_question}"
 
     if actual_input:
         if st.session_state.agent_available and not _check_usage_limit():
             st.rerun()
 
-        active_conversation_id = _ensure_active_conversation(current_username, actual_input)
+        active_conversation_id = _ensure_active_conversation(current_username, display_input or actual_input)
         user_message_id = None
         if active_conversation_id:
-            user_message_id = append_message(active_conversation_id, current_username, "user", actual_input)
+            user_message_id = append_message(active_conversation_id, current_username, "user", display_input or actual_input)
 
         # 显示用户消息
         st.session_state.chat_history.append({
-            "message_id": user_message_id, "role": "user", "content": actual_input
+            "message_id": user_message_id, "role": "user", "content": display_input or actual_input
         })
 
         if not st.session_state.agent_available:
@@ -619,7 +648,7 @@ with tab_chat:
         st.session_state.last_action_drafts = result.get("action_drafts", [])
         st.session_state.last_diagnosis = result.get("diagnosis", {})
         st.session_state.last_run_meta = result.get("run_meta", {})
-        st.session_state.last_question = actual_input
+        st.session_state.last_question = display_input or actual_input
         if active_conversation_id:
             record_run_metric(current_username, active_conversation_id, result.get("run_meta", {}))
         if result.get("error") and not result.get("tool_results"):
