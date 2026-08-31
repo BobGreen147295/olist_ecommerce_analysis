@@ -54,6 +54,11 @@ def _get_setting(name: str, default: str = "") -> str:
     return str(value or os.environ.get(name, default)).strip()
 
 
+def _safe_markdown(text: object) -> str:
+    """避免金额中的 $ 被 Markdown 误识别为 LaTex 数学公式分隔符。"""
+    return str(text).replace("$", "\\$")
+
+
 def _require_login() -> None:
     """使用数据库账号登录；未配置数据库时回退为本地开发免登录。"""
     if not _get_setting("DATABASE_URL"):
@@ -174,7 +179,7 @@ def _show_evidence_cards(diagnosis: dict) -> None:
                 if not isinstance(evidence, list):
                     evidence = [evidence]
                 for item in evidence:
-                    st.markdown(f"- {item}")
+                    st.markdown(_safe_markdown(f"- {item}"))
             with right:
                 st.metric("置信度", confidence_text)
                 st.caption(f"来源：{finding.get('source', '未标注')}")
@@ -571,7 +576,7 @@ with tab_chat:
     with chat_container:
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+                st.markdown(_safe_markdown(msg["content"]))
                 if msg["role"] == "assistant":
                     _show_message_feedback(
                         msg, feedback_by_message, active_conversation_id, current_username
