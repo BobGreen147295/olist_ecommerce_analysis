@@ -1,12 +1,14 @@
-"""运营任务草稿的轻量持久化层。
+"""运营任务持久化层。
 
-V1 使用本地 JSON，接口设计保持数据库可替换：页面和 Agent 不直接操作文件。
+默认使用本地 JSON，适合开发和离线演示；配置 DATABASE_URL 后自动使用
+PostgreSQL，适合 Streamlit Cloud 等多用户部署。页面和 Agent 不直接操作存储细节。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,11 +25,110 @@ EDITABLE_FIELDS = {
 }
 
 
+def _database_url() -> str:
+    return os.environ.get("DATABASE_URL", "").strip()
+
+
+def _use_database() -> bool:
+    return bool(_database_url())
+
+
+def _connect_database():
+    """连接 PostgreSQL 或 SQLite URL，并在首次使用时建表。"""
+    url = _database_url()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        try:
+            import psycopg2
+        except ImportError as exc:
+            raise RuntimeError("配置 DATABASE_URL 后需要安装 psycopg2-binary") from exc
+        conn = psycopg2.connect(url)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS operation_tasks (
+                task_id VARCHAR(32) PRIMARY KEY,
+                status VARCHAR(20) NOT NULL,
+                created_at VARCHAR(40) NOT NULL,
+                updated_at VARCHAR(40) NOT NULL,
+                payload TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        cursor.close()
+        return conn, "%s"
+    if url.startswith("sqlite:///"):
+        db_path = url[len("sqlite:///"):]
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS operation_tasks (
+                task_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        return conn, "?"
+    raise ValueError("DATABASE_URL 仅支持 postgresql:// 或 sqlite:/// 格式")
+
+
+def _db_load_tasks() -> list[dict[str, Any]]:
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT payload FROM operation_tasks ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        return [json.loads(row[0]) for row in rows]
+    finally:
+        conn.close()
+
+
+def _db_save_task(task: dict[str, Any]) -> None:
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        if placeholder == "%s":
+            cursor.execute(
+                """
+                INSERT INTO operation_tasks (task_id, status, created_at, updated_at, payload)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (task_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    updated_at = EXCLUDED.updated_at,
+                    payload = EXCLUDED.payload
+                """,
+                (task["task_id"], task["status"], task["created_at"], task["updated_at"], json.dumps(task, ensure_ascii=False)),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO operation_tasks (task_id, status, created_at, updated_at, payload)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    status = excluded.status,
+                    updated_at = excluded.updated_at,
+                    payload = excluded.payload
+                """,
+                (task["task_id"], task["status"], task["created_at"], task["updated_at"], json.dumps(task, ensure_ascii=False)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def load_tasks(path: Optional[Path] = None) -> list[dict[str, Any]]:
+    if path is None and _use_database():
+        return _db_load_tasks()
     path = path or TASKS_PATH
     if not path.exists():
         return []
@@ -39,6 +140,10 @@ def load_tasks(path: Optional[Path] = None) -> list[dict[str, Any]]:
 
 
 def save_tasks(tasks: list[dict[str, Any]], path: Optional[Path] = None) -> None:
+    if path is None and _use_database():
+        for task in tasks:
+            _db_save_task(task)
+        return
     path = path or TASKS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(path.suffix + ".tmp")
@@ -64,9 +169,12 @@ def create_task(
     for field in EDITABLE_FIELDS:
         if field in draft:
             task[field] = draft[field]
-    tasks = load_tasks(path)
-    tasks.insert(0, task)
-    save_tasks(tasks, path)
+    if path is None and _use_database():
+        _db_save_task(task)
+    else:
+        tasks = load_tasks(path)
+        tasks.insert(0, task)
+        save_tasks(tasks, path)
     return task
 
 
@@ -85,7 +193,10 @@ def update_task(
         if "status" in updates and updates["status"] in VALID_STATUSES:
             task["status"] = updates["status"]
         task["updated_at"] = _now()
-        save_tasks(tasks, path)
+        if path is None and _use_database():
+            _db_save_task(task)
+        else:
+            save_tasks(tasks, path)
         return task
     return None
 
@@ -109,6 +220,9 @@ def complete_task(
         task["result"] = result
         task["status"] = "completed"
         task["updated_at"] = _now()
-        save_tasks(tasks, path)
+        if path is None and _use_database():
+            _db_save_task(task)
+        else:
+            save_tasks(tasks, path)
         return task
     return None

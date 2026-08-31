@@ -28,3 +28,4 @@ Thumbs.db
 # 本地运行产生的运营任务，避免把用户操作数据提交到仓库
 data/processed/operation_tasks.json
 data/processed/operation_tasks.json.tmp
+data/processed/agent_runs.jsonl

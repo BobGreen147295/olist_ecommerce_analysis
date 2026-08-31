@@ -21,6 +21,82 @@ import numpy as np
 from src.agent.evaluation import evaluate_experiment
 from src.agent.task_store import complete_task, create_task, load_tasks, update_task
 
+
+# ── 访问控制与成本保护 ─────────────────────────────
+def _get_setting(name: str, default: str = "") -> str:
+    """优先读取 Streamlit Secrets，再读取环境变量，便于本地和云端共用代码。"""
+    try:
+        value = st.secrets.get(name, default)
+    except Exception:
+        value = default
+    return str(value or os.environ.get(name, default)).strip()
+
+
+def _require_access() -> None:
+    """云端设置 APP_PASSWORD 后启用登录；未设置时保持本地免登录。"""
+    configured_password = _get_setting("APP_PASSWORD")
+    if not configured_password:
+        return
+
+    if st.session_state.get("authenticated"):
+        return
+
+    st.title("🛒 Olist AI 运营分析系统")
+    st.subheader("访问验证")
+    st.caption("这是受保护的运营分析应用，请输入访问密码。")
+    password = st.text_input("访问密码", type="password")
+    if st.button("进入系统", type="primary", use_container_width=True):
+        if password == configured_password:
+            st.session_state.authenticated = True
+            st.rerun()
+        st.error("访问密码不正确")
+    st.stop()
+
+
+def _check_usage_limit() -> bool:
+    """限制单个浏览会话的 Agent 调用次数，避免公开演示时无限消耗 API。"""
+    try:
+        limit = int(_get_setting("MAX_AGENT_CALLS_PER_SESSION", "20"))
+    except ValueError:
+        limit = 20
+    used = int(st.session_state.get("agent_calls", 0))
+    if used >= max(1, limit):
+        st.warning(f"本次会话已达到 Agent 调用上限（{limit} 次），请联系管理员重置。")
+        return False
+    st.session_state.agent_calls = used + 1
+    return True
+
+
+def _show_evidence_cards(diagnosis: dict) -> None:
+    """把 Agent 的结构化诊断渲染为可核验的证据卡片。"""
+    findings = diagnosis.get("findings", []) if isinstance(diagnosis, dict) else []
+    if not findings:
+        return
+    st.subheader("📌 证据与可信度")
+    st.caption("以下内容来自 Agent 工具查询和结构化诊断，建议结合原始数据快照复核。")
+    for index, finding in enumerate(findings, 1):
+        title = finding.get("title", f"诊断结论 {index}")
+        priority = finding.get("priority", "P2")
+        confidence = finding.get("confidence")
+        if isinstance(confidence, (int, float)):
+            confidence_text = f"{confidence:.0%}"
+        else:
+            confidence_text = str(confidence or "未提供")
+        with st.expander(f"[{priority}] {title}", expanded=index == 1):
+            left, right = st.columns([3, 1])
+            with left:
+                evidence = finding.get("evidence", [])
+                if not isinstance(evidence, list):
+                    evidence = [evidence]
+                for item in evidence:
+                    st.markdown(f"- {item}")
+            with right:
+                st.metric("置信度", confidence_text)
+                st.caption(f"来源：{finding.get('source', '未标注')}")
+            snapshot = finding.get("metric_snapshot")
+            if isinstance(snapshot, dict) and snapshot:
+                st.json(snapshot, expanded=False)
+
 # ── 中文字体设置 ──────────────────────────────────
 plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC", "Arial Unicode MS"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -76,6 +152,8 @@ st.set_page_config(
     page_icon="🛒",
     layout="wide",
 )
+
+_require_access()
 
 # ── 页面标题 ──────────────────────────────────────
 st.title("🛒 Olist 电商 AI 运营分析系统")
@@ -345,6 +423,10 @@ with tab_chat:
             st.session_state.chat_history.append({"role": "assistant", "content": fallback})
             st.rerun()
 
+        if not _check_usage_limit():
+            st.session_state.chat_history.pop()
+            st.rerun()
+
         # ── 调用 Agent ────────────────────────
         with st.spinner("🤖 Agent 思考中..."):
             try:
@@ -355,6 +437,7 @@ with tab_chat:
         # ── 构建回复消息 ──────────────────────
         st.session_state.last_action_drafts = result.get("action_drafts", [])
         st.session_state.last_diagnosis = result.get("diagnosis", {})
+        st.session_state.last_run_meta = result.get("run_meta", {})
         st.session_state.last_question = actual_input
         if result.get("error") and not result.get("tool_results"):
             reply = f"❌ **执行出错**: {result['error']}"
@@ -412,6 +495,9 @@ with tab_chat:
             st.session_state.chat_history = st.session_state.chat_history[-max_messages:]
 
         st.rerun()
+
+    # ── 结构化证据展示 ─────────────────────────────
+    _show_evidence_cards(st.session_state.get("last_diagnosis", {}))
 
     # ── 运营任务：编辑、保存、确认/驳回 ─────────────────
     with st.expander("📝 运营任务中心", expanded=bool(st.session_state.get("last_action_drafts"))):
@@ -510,6 +596,12 @@ with tab_chat:
             session = st.session_state.agent_session
             turn_count = len(session.history) // 2 if session else 0
             st.caption(f"当前对话轮数: {turn_count}")
+            run_meta = st.session_state.get("last_run_meta", {})
+            if run_meta:
+                st.caption(
+                    f"最近一次运行：{run_meta.get('duration_ms', 0)} ms · "
+                    f"工具 {run_meta.get('successful_tool_count', 0)}/{run_meta.get('tool_count', 0)} 成功"
+                )
 
     # ── 空状态引导 ──────────────────────────────
     if not st.session_state.chat_history:

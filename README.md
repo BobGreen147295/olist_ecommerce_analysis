@@ -91,8 +91,11 @@ olist_project/
 │   ├── model_churn.py             # XGBoost 流失预测
 │   ├── visualization.py           # 图表生成（13 张）
 │   └── agent/                     # 🤖 Agent 模块
-│       ├── tools.py               # 6 个数据查询工具 + TOOL_REGISTRY
+│       ├── tools.py               # 7 个数据查询工具 + TOOL_REGISTRY
 │       ├── agent_graph.py         # LangGraph 三节点编排
+│       ├── task_store.py          # 本地 JSON / PostgreSQL 任务存储
+│       ├── evaluation.py          # A/B 实验与 ROI 评估
+│       └── observability.py       # 脱敏运行日志
 │       └── run_agent.py           # CLI 入口
 │
 ├── dashboard/
@@ -169,6 +172,10 @@ python src/visualization.py      # 生成图表
 streamlit run dashboard/dashboard.py  # 交互仪表盘
 ```
 
+### 线上部署能力
+
+应用支持本地 Ollama 和云端 OpenAI 两种模型模式。公开部署时，在 Streamlit Secrets 中配置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_MODEL`，并建议配置 `APP_PASSWORD`、`MAX_AGENT_CALLS_PER_SESSION` 和 PostgreSQL `DATABASE_URL`。访问控制、调用上限、任务持久化和 Agent 运行观测说明见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
 ---
 
 ## 💼 面试问答
@@ -202,7 +209,7 @@ LangChain Chain 是线性的 A→B→C，没有分支。LangGraph 用有向图�
 - [x] 模块化拆分（8 个独立模块）
 - [x] KMeans + XGBoost + RFM 建模
 - [x] 结构化策略输出（P0-P2 + 行动点 + ROI）
-- [ ] MCP Server 化：将 6 个数据工具包装为 Model Context Protocol 服务
+- [ ] MCP Server 化：将 7 个数据工具包装为 Model Context Protocol 服务
 - [ ] RAG 向量库：历史运营报告入库，相似案例检索
 - [ ] Web Agent 界面：在现有 `web/` 模板基础上重建聊天 UI
 - [ ] 真实流失标签：替换 RFM 代理标签

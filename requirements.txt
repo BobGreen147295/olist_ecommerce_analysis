@@ -29,6 +29,7 @@ beautifulsoup4>=4.10.0
 # 数据库
 pymysql>=1.0.0
 cryptography>=3.4.0
+psycopg2-binary>=2.9.9
 
 # 交互式仪表盘
 streamlit>=1.0.0

@@ -13,10 +13,12 @@ LangGraph 三节点 Agent 编排（v2.1 支持多轮对话）
 
 import json
 import os
+import time
 from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, END
 from .tools import execute_tool, TOOL_REGISTRY
+from .observability import append_run_log, build_run_meta
 
 
 class AgentState(TypedDict, total=False):
@@ -447,30 +449,18 @@ agent = build_graph()
 
 def run(user_query: str) -> dict:
     """运行 Agent（单轮），向后兼容 CLI 调用"""
-    state: AgentState = {
-        "user_query": user_query,
-        "conversation_history": [],
-    }
-    result = agent.invoke(state)
-    return {
-        "user_query": result.get("user_query", ""),
-        "tool_results": result.get("tool_results", []),
-        "analysis": result.get("analysis", ""),
-        "recommendation": result.get("recommendation", ""),
-        "diagnosis": result.get("diagnosis", {}),
-        "action_drafts": result.get("action_drafts", []),
-        "error": result.get("error"),
-    }
+    return run_with_history(user_query, [])
 
 
 def run_with_history(user_query: str, history: list[dict] = None) -> dict:
     """运行 Agent（多轮），携带对话历史上下文"""
+    started_at = time.perf_counter()
     state: AgentState = {
         "user_query": user_query,
         "conversation_history": history or [],
     }
     result = agent.invoke(state)
-    return {
+    response = {
         "user_query": result.get("user_query", ""),
         "tool_results": result.get("tool_results", []),
         "analysis": result.get("analysis", ""),
@@ -479,6 +469,10 @@ def run_with_history(user_query: str, history: list[dict] = None) -> dict:
         "action_drafts": result.get("action_drafts", []),
         "error": result.get("error"),
     }
+    run_meta = build_run_meta(user_query, response, int((time.perf_counter() - started_at) * 1000))
+    append_run_log(run_meta)
+    response["run_meta"] = run_meta
+    return response
 
 
 # ============ 多轮对话会话管理 ============

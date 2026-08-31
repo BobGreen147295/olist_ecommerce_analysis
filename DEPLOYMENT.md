@@ -33,10 +33,24 @@ OPENAI_BASE_URL=可选的兼容接口地址
 2. 在 Streamlit Community Cloud 创建应用；
 3. 入口选择 `dashboard/dashboard.py`；
 4. Python 版本选择 3.12；
-5. 在 Secrets 中设置 `LLM_PROVIDER`、`OPENAI_API_KEY` 和 `OPENAI_MODEL`；
+5. 在 Secrets 中设置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_MODEL`，并建议设置 `APP_PASSWORD`、`MAX_AGENT_CALLS_PER_SESSION` 和 `DATABASE_URL`；
 6. 部署后通过生成的 `streamlit.app` 地址访问。
 
 Community Cloud 会根据仓库中的 `requirements.txt` 安装 Python 依赖。应用需要使用的 CSV 也必须在仓库中或从外部数据源加载。
+
+### 线上安全配置
+
+```text
+LLM_PROVIDER=openai
+OPENAI_API_KEY=你的密钥
+OPENAI_MODEL=gpt-4o-mini
+APP_PASSWORD=你的访问密码
+MAX_AGENT_CALLS_PER_SESSION=20
+```
+
+配置 `APP_PASSWORD` 后，访客必须输入访问密码才能进入系统；不配置时适合本地开发。`MAX_AGENT_CALLS_PER_SESSION` 用于限制单个浏览会话的 Agent 调用次数，避免公开演示时 API 费用失控。API Key 和访问密码只能放在 Streamlit Secrets，不能提交到 GitHub。
+
+配置 `DATABASE_URL` 后，运营任务会保存到 PostgreSQL；未配置时继续保存到本地 JSON。应用首次连接数据库时会自动创建 `operation_tasks` 表，不需要手动执行建表 SQL。推荐使用 Supabase、Neon 等托管 PostgreSQL，并将完整连接串放入 Secrets。
 
 ## Docker 部署
 
@@ -54,6 +68,7 @@ docker run --rm -p 8501:8501 \
 ## 重要限制
 
 - `operation_tasks.json` 是单机原型存储，云端重启或多实例部署时不保证持久化；
+- Agent 运行摘要默认写入 `agent_runs.jsonl`，只保存脱敏统计，不保存原始问题文本；
 - 多用户版本应将任务迁移到数据库；
 - 不要把真实客户姓名、邮箱、电话等敏感信息提交到 GitHub；
 - 不要把 Ollama 端口直接暴露到公网，应通过带认证的后端服务访问；
