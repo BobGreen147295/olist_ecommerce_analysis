@@ -104,6 +104,19 @@ def _show_evidence_cards(diagnosis: dict) -> None:
             if isinstance(snapshot, dict) and snapshot:
                 st.json(snapshot, expanded=False)
 
+
+def _experiment_verdict(result: dict) -> tuple[str, str]:
+    """将确定性实验指标翻译为便于运营人员理解的结论标签。"""
+    roi = result.get("roi")
+    uplift = float(result.get("conversion_uplift_pp", 0) or 0)
+    if roi is None:
+        return "成本未录入", "请补充活动成本后再判断投入回报。"
+    if roi > 0 and uplift > 0:
+        return "建议扩大验证", "转化与投入回报均为正，建议扩大样本并继续观察。"
+    if uplift > 0:
+        return "转化有效，成本待优化", "活动带来转化提升，但当前成本仍需要优化。"
+    return "建议复盘优化", "当前实验未证明策略带来正向转化增量，建议调整人群或渠道。"
+
 # ── 中文字体设置 ──────────────────────────────────
 plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC", "Arial Unicode MS"]
 plt.rcParams["axes.unicode_minus"] = False
@@ -535,6 +548,22 @@ with tab_chat:
         if tasks:
             st.divider()
             st.caption(f"已保存任务：{len(tasks)} 条")
+            completed_results = [
+                task.get("result", {}) for task in tasks
+                if task.get("status") == "completed" and isinstance(task.get("result"), dict)
+            ]
+            if completed_results:
+                total_incremental_revenue = sum(
+                    float(result.get("incremental_revenue", 0) or 0) for result in completed_results
+                )
+                total_cost = sum(float(result.get("cost", 0) or 0) for result in completed_results)
+                portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost else None
+                st.markdown("##### 📈 运营实验累计效果")
+                metric_a, metric_b, metric_c, metric_d = st.columns(4)
+                metric_a.metric("已完成实验", f"{len(completed_results)} 个")
+                metric_b.metric("累计增量收入", f"R$ {total_incremental_revenue:,.0f}")
+                metric_c.metric("累计活动成本", f"R$ {total_cost:,.0f}")
+                metric_d.metric("组合 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "待录入成本")
             for task in tasks[:10]:
                 task_id = task.get("task_id", "?")
                 status = task.get("status", "draft")
@@ -579,11 +608,20 @@ with tab_chat:
                     result = task["result"]
                     roi = result.get("roi")
                     roi_text = f"{roi:.1%}" if roi is not None else "未计算（成本为 0）"
-                    st.caption(
-                        f"实验组转化率：{result.get('treatment_conversion', 0):.2%} · "
-                        f"对照组：{result.get('control_conversion', 0):.2%} · "
-                        f"提升：{result.get('conversion_uplift_pp', 0):.2f} 个百分点 · ROI：{roi_text}"
-                    )
+                    verdict_title, verdict_detail = _experiment_verdict(result)
+                    with st.container(border=True):
+                        st.markdown("##### 📊 实验复盘结果")
+                        metric_a, metric_b, metric_c, metric_d = st.columns(4)
+                        metric_a.metric("实验组转化率", f"{result.get('treatment_conversion', 0):.2%}")
+                        metric_b.metric("转化提升", f"{result.get('conversion_uplift_pp', 0):.2f} 个百分点")
+                        metric_c.metric("增量收入", f"R$ {float(result.get('incremental_revenue', 0) or 0):,.0f}")
+                        metric_d.metric("ROI", roi_text)
+                        st.caption(
+                            f"对照组转化率：{result.get('control_conversion', 0):.2%} · "
+                            f"增量订单：{float(result.get('incremental_orders', 0) or 0):,.1f} · "
+                            f"活动成本：R$ {float(result.get('cost', 0) or 0):,.0f}"
+                        )
+                        st.info(f"**{verdict_title}**：{verdict_detail}")
 
     # ── 侧边栏: 会话控制 ────────────────────────
     with st.sidebar:
