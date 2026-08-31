@@ -29,6 +29,7 @@ from src.agent.account_store import (
     load_messages,
 )
 from src.agent.feedback_store import (
+    get_feedback_operations_summary,
     get_quality_summary,
     list_feedback_issues,
     load_feedback,
@@ -850,6 +851,7 @@ with tab_chat:
     if current_user.get("role") == "admin" and _get_setting("DATABASE_URL"):
         with st.expander("📈 Agent 质量看板", expanded=False):
             quality = get_quality_summary()
+            feedback_operations = get_feedback_operations_summary()
             all_tasks = load_tasks()
             completed_results = [
                 task.get("result", {}) for task in all_tasks
@@ -881,6 +883,33 @@ with tab_chat:
                 f"错误率：{quality['error_rate']:.0%} · 已完成实验：{len(completed_results)} 个 · "
                 f"累计增量收入：R$ {total_incremental_revenue:,.0f}"
             )
+            st.markdown("##### 🔁 反馈闭环指标")
+            ops_a, ops_b, ops_c, ops_d = st.columns(4)
+            ops_a.metric("负反馈", f"{feedback_operations['negative_feedback_count']} 条")
+            ops_b.metric("待处理", f"{feedback_operations['open_count']} 条")
+            ops_c.metric(
+                "已处理率",
+                f"{feedback_operations['processed_rate']:.0%}"
+                if feedback_operations["processed_rate"] is not None else "暂无反馈",
+            )
+            ops_d.metric(
+                "平均闭环时长",
+                f"{feedback_operations['avg_closure_hours']:.1f} 小时"
+                if feedback_operations["avg_closure_hours"] is not None else "暂无数据",
+            )
+            type_labels = {"content": "回答内容", "data": "数据准确性", "experience": "页面 / 交互体验"}
+            feedback_type_rows = [
+                {
+                    "类型": type_labels.get(feedback_type, feedback_type),
+                    "反馈数": values["total"],
+                    "待处理": values["open"],
+                }
+                for feedback_type, values in feedback_operations["by_type"].items()
+            ]
+            if feedback_operations["negative_feedback_count"]:
+                st.bar_chart(pd.DataFrame(feedback_type_rows).set_index("类型")[["反馈数", "待处理"]])
+            else:
+                st.caption("暂无负反馈数据；收到反馈后将按类型展示产品改进优先级。")
 
         with st.expander("📥 用户反馈待办中心", expanded=False):
             status_filter = st.selectbox(

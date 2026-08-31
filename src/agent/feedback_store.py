@@ -239,6 +239,52 @@ def get_quality_summary() -> dict[str, Any]:
         conn.close()
 
 
+def get_feedback_operations_summary() -> dict[str, Any]:
+    """聚合负反馈闭环指标，供管理员评估产品迭代效率。"""
+    _initialize_schema()
+    conn, _ = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT feedback_type, status, created_at, resolved_at FROM agent_feedback WHERE rating = -1"
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        by_type = {
+            feedback_type: {"total": 0, "open": 0, "processed": 0}
+            for feedback_type in sorted(FEEDBACK_TYPES)
+        }
+        closure_hours: list[float] = []
+        processed_count = 0
+        for feedback_type, status, created_at, resolved_at in rows:
+            bucket = by_type.setdefault(feedback_type or "content", {"total": 0, "open": 0, "processed": 0})
+            bucket["total"] += 1
+            if status == "open":
+                bucket["open"] += 1
+                continue
+            bucket["processed"] += 1
+            processed_count += 1
+            if not created_at or not resolved_at:
+                continue
+            try:
+                created = datetime.fromisoformat(created_at)
+                resolved = datetime.fromisoformat(resolved_at)
+                closure_hours.append(max(0.0, (resolved - created).total_seconds() / 3600))
+            except (TypeError, ValueError):
+                continue
+        total = len(rows)
+        return {
+            "negative_feedback_count": total,
+            "open_count": sum(item["open"] for item in by_type.values()),
+            "processed_count": processed_count,
+            "processed_rate": (processed_count / total) if total else None,
+            "avg_closure_hours": (sum(closure_hours) / len(closure_hours)) if closure_hours else None,
+            "by_type": by_type,
+        }
+    finally:
+        conn.close()
+
+
 def list_feedback_issues(status: str | None = None) -> list[dict[str, Any]]:
     """返回负反馈待办，不读取原始业务提问或模型完整回复。"""
     _initialize_schema()
