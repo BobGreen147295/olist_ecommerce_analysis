@@ -106,7 +106,16 @@ def _fallback_tool_calls(query: str) -> list[dict]:
     """LLM 路由失败时的保底意图识别，保证常见问题仍可查询数据。"""
     text = query.lower()
     calls: list[dict] = []
-    if any(word in text for word in ["流失", "召回", "风险", "挽回"]):
+    region_aliases = {
+        "圣保罗": "SP", "são paulo": "SP", "sao paulo": "SP", "sp州": "SP",
+        "里约": "RJ", "rio de janeiro": "RJ", "rj州": "RJ",
+        "米纳斯": "MG", "minas gerais": "MG", "mg州": "MG",
+        "巴伊亚": "BA", "bahia": "BA", "ba州": "BA",
+    }
+    region = next((code for alias, code in region_aliases.items() if alias in text), None)
+    if region:
+        calls = [{"tool": "query_sales_by_region", "args": {"region": region}}]
+    elif any(word in text for word in ["流失", "召回", "风险", "挽回"]):
         calls = [
             {"tool": "query_churn_risk", "args": {}},
             {"tool": "query_rfm_summary", "args": {}},
@@ -115,6 +124,8 @@ def _fallback_tool_calls(query: str) -> list[dict]:
         calls = [{"tool": "query_payment_distribution", "args": {}}]
     elif any(word in text for word in ["分群", "客群", "用户画像"]):
         calls = [{"tool": "query_user_segments", "args": {}}]
+    elif any(word in text for word in ["rfm", "客户价值", "高价值客户", "低价值客户"]):
+        calls = [{"tool": "query_rfm_summary", "args": {}}]
     elif any(word in text for word in ["产品", "品类", "热销", "商品"]):
         calls = [{"tool": "query_top_categories", "args": {"n": 10}}]
     elif any(word in text for word in ["趋势", "变化", "最近", "月份", "月度"]):

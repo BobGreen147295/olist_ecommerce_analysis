@@ -37,6 +37,7 @@ from src.agent.feedback_store import (
     save_feedback,
     update_feedback_issue,
 )
+from src.agent.regression_eval import run_tool_routing_regression
 from src.agent.task_store import (
     check_database_connection,
     complete_task,
@@ -946,6 +947,25 @@ with tab_chat:
                     st.caption(
                         f"处理说明：{issue['resolution'] or '未填写'} · 处理人：{issue['resolved_by'] or '未记录'}"
                     )
+
+        with st.expander("🧪 Agent 工具路由回归评测", expanded=False):
+            st.caption("覆盖 30 个核心运营问题，验证模型不可用时的保底路由、参数和真实数据工具。不会调用 LLM，也不会消耗 API 额度。")
+            if st.button("运行 30 条回归评测", key="run_tool_routing_regression", use_container_width=True):
+                with st.spinner("正在验证工具路由与数据可用性..."):
+                    st.session_state.tool_routing_regression = run_tool_routing_regression()
+            regression = st.session_state.get("tool_routing_regression")
+            if regression:
+                reg_a, reg_b, reg_c, reg_d = st.columns(4)
+                reg_a.metric("通过用例", f"{regression['passed']} / {regression['total']}")
+                reg_b.metric("路由准确率", f"{regression['routing_accuracy']:.0%}")
+                reg_c.metric("参数准确率", f"{regression['parameter_accuracy']:.0%}")
+                reg_d.metric("工具执行成功率", f"{regression['tool_execution_success_rate']:.0%}")
+                failed_cases = [item for item in regression["results"] if not item["passed"]]
+                if failed_cases:
+                    st.error(f"发现 {len(failed_cases)} 条未通过用例，请在改动模型、Prompt 或工具后修复。")
+                    st.dataframe(pd.DataFrame(failed_cases), use_container_width=True, hide_index=True)
+                else:
+                    st.success("30 条核心运营场景全部通过，可作为当前版本的保底能力基线。")
 
     # ── 侧边栏: 会话控制 ────────────────────────
     with st.sidebar:
