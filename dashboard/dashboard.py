@@ -54,12 +54,13 @@ def _require_login() -> None:
         st.session_state.current_user = {"username": "local", "role": "admin"}
         return
     admin_username = _get_setting("APP_ADMIN_USERNAME", "olist_admin")
-    admin_password = _get_setting("APP_ADMIN_PASSWORD") or _get_setting("APP_PASSWORD")
+    admin_password = _get_setting("APP_ADMIN_PASSWORD")
     if not admin_password:
         st.error("缺少 APP_ADMIN_PASSWORD，请在 Streamlit Secrets 中配置管理员密码。")
         st.stop()
     try:
-        ensure_admin_account(admin_username, admin_password)
+        reset_admin_password = _get_setting("APP_ADMIN_RESET_PASSWORD", "false").lower() == "true"
+        ensure_admin_account(admin_username, admin_password, reset_password=reset_admin_password)
     except Exception as exc:
         st.error(f"账号服务暂不可用：{type(exc).__name__}")
         st.stop()

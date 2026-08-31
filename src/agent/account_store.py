@@ -98,8 +98,8 @@ def _initialize_schema() -> None:
         conn.close()
 
 
-def ensure_admin_account(username: str, password: str) -> None:
-    """首次启动时创建管理员；已有账号不覆盖，避免配置变更重置密码。"""
+def ensure_admin_account(username: str, password: str, reset_password: bool = False) -> None:
+    """首次启动时创建管理员；仅在显式请求时重置已有管理员密码。"""
     if not username or not password:
         return
     _initialize_schema()
@@ -114,6 +114,13 @@ def ensure_admin_account(username: str, password: str) -> None:
                 f"INSERT INTO app_users (username, password_hash, role, enabled, created_at) "
                 f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
                 (username, _hash_password(password), "admin", True, _now()),
+            )
+            conn.commit()
+        elif reset_password:
+            cursor.execute(
+                f"UPDATE app_users SET password_hash = {placeholder}, enabled = {placeholder} "
+                f"WHERE username = {placeholder}",
+                (_hash_password(password), True, username),
             )
             conn.commit()
         cursor.close()
