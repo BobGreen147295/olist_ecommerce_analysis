@@ -49,7 +49,12 @@ CREATE TABLE IF NOT EXISTS agent_feedback (
     username VARCHAR(32) NOT NULL,
     rating INTEGER NOT NULL,
     reason TEXT,
-    created_at VARCHAR(40) NOT NULL
+    feedback_type VARCHAR(24) NOT NULL DEFAULT 'content',
+    status VARCHAR(24) NOT NULL DEFAULT 'open',
+    resolution TEXT,
+    resolved_by VARCHAR(32),
+    created_at VARCHAR(40) NOT NULL,
+    resolved_at VARCHAR(40)
 );
 
 CREATE TABLE IF NOT EXISTS agent_run_metrics (

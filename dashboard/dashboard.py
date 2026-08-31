@@ -30,9 +30,11 @@ from src.agent.account_store import (
 )
 from src.agent.feedback_store import (
     get_quality_summary,
+    list_feedback_issues,
     load_feedback,
     record_run_metric,
     save_feedback,
+    update_feedback_issue,
 )
 from src.agent.task_store import (
     check_database_connection,
@@ -215,7 +217,8 @@ def _show_message_feedback(
     if existing:
         label = "👍 已标记为有帮助" if existing["rating"] == 1 else "👎 已标记为需要改进"
         st.caption(label)
-        if existing["rating"] == -1:
+        feedback_type = existing.get("feedback_type", "content")
+        if existing["rating"] == -1 and feedback_type == "content":
             if st.button("🔄 基于反馈重新生成", key=f"regenerate_{message_id}", use_container_width=True):
                 original_question = ""
                 history = st.session_state.get("chat_history", [])
@@ -231,7 +234,13 @@ def _show_message_feedback(
                     "question": original_question or st.session_state.get("last_question", ""),
                     "reason": existing.get("reason") or "请补充更明确的数据证据和可执行行动方案。",
                 }
+                update_feedback_issue(
+                    existing["feedback_id"], "resolved", "已基于用户反馈生成新回答", username
+                )
                 st.rerun()
+        elif existing["rating"] == -1:
+            type_label = "数据复核" if feedback_type == "data" else "产品体验待办"
+            st.caption(f"该反馈已进入管理员{type_label}流程，不触发 Agent 重写。")
         return
     up_col, down_col = st.columns(2)
     if up_col.button("👍 有帮助", key=f"feedback_up_{message_id}", use_container_width=True):
@@ -242,10 +251,19 @@ def _show_message_feedback(
         st.rerun()
     if st.session_state.get("feedback_target") == message_id:
         with st.form(f"feedback_form_{message_id}"):
+            feedback_type = st.selectbox(
+                "反馈类型",
+                options=["content", "data", "experience"],
+                format_func=lambda value: {
+                    "content": "回答内容问题（可重新生成）",
+                    "data": "数据准确性问题（人工复核）",
+                    "experience": "页面 / 交互体验问题（产品待办）",
+                }[value],
+            )
             reason = st.text_area("哪里需要改进？（可选）", max_chars=500)
             submitted = st.form_submit_button("提交反馈", use_container_width=True)
         if submitted:
-            save_feedback(message_id, conversation_id, username, -1, reason)
+            save_feedback(message_id, conversation_id, username, -1, reason, feedback_type)
             st.session_state.pop("feedback_target", None)
             st.rerun()
 
@@ -863,6 +881,42 @@ with tab_chat:
                 f"错误率：{quality['error_rate']:.0%} · 已完成实验：{len(completed_results)} 个 · "
                 f"累计增量收入：R$ {total_incremental_revenue:,.0f}"
             )
+
+        with st.expander("📥 用户反馈待办中心", expanded=False):
+            status_filter = st.selectbox(
+                "处理状态",
+                options=["open", "resolved", "dismissed"],
+                format_func=lambda value: {"open": "待处理", "resolved": "已修复", "dismissed": "不处理"}[value],
+            )
+            issues = list_feedback_issues(status_filter)
+            if not issues:
+                st.info("当前没有符合条件的负反馈待办。")
+            for issue in issues:
+                type_label = {
+                    "content": "回答内容",
+                    "data": "数据准确性",
+                    "experience": "页面 / 交互体验",
+                }.get(issue["feedback_type"], "未分类")
+                st.markdown(f"**[{type_label}] {issue['username']} 的反馈** · `{issue['feedback_id']}`")
+                st.caption(f"提交时间：{issue['created_at']} · 描述：{issue['reason'] or '未填写'}")
+                if issue["status"] == "open":
+                    with st.form(f"issue_form_{issue['feedback_id']}"):
+                        resolution = st.text_area(
+                            "处理说明", max_chars=500, key=f"issue_resolution_{issue['feedback_id']}"
+                        )
+                        decision = st.radio(
+                            "处理结果", options=["resolved", "dismissed"], horizontal=True,
+                            format_func=lambda value: "已修复" if value == "resolved" else "不处理",
+                            key=f"issue_decision_{issue['feedback_id']}",
+                        )
+                        submitted = st.form_submit_button("更新待办", use_container_width=True)
+                    if submitted:
+                        update_feedback_issue(issue["feedback_id"], decision, resolution, current_username)
+                        st.rerun()
+                else:
+                    st.caption(
+                        f"处理说明：{issue['resolution'] or '未填写'} · 处理人：{issue['resolved_by'] or '未记录'}"
+                    )
 
     # ── 侧边栏: 会话控制 ────────────────────────
     with st.sidebar:

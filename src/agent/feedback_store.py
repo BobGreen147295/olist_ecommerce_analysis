@@ -9,6 +9,10 @@ from typing import Any
 from .task_store import _connect_database, _use_database
 
 
+FEEDBACK_TYPES = {"content", "data", "experience"}
+ISSUE_STATUSES = {"open", "resolved", "dismissed"}
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -16,7 +20,7 @@ def _now() -> str:
 def _initialize_schema() -> None:
     if not _use_database():
         raise RuntimeError("反馈与质量指标需要配置 DATABASE_URL")
-    conn, _ = _connect_database()
+    conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -32,6 +36,25 @@ def _initialize_schema() -> None:
             )
             """
         )
+        if placeholder == "%s":
+            cursor.execute("ALTER TABLE agent_feedback ADD COLUMN IF NOT EXISTS feedback_type VARCHAR(24) NOT NULL DEFAULT 'content'")
+            cursor.execute("ALTER TABLE agent_feedback ADD COLUMN IF NOT EXISTS status VARCHAR(24) NOT NULL DEFAULT 'open'")
+            cursor.execute("ALTER TABLE agent_feedback ADD COLUMN IF NOT EXISTS resolution TEXT")
+            cursor.execute("ALTER TABLE agent_feedback ADD COLUMN IF NOT EXISTS resolved_by VARCHAR(32)")
+            cursor.execute("ALTER TABLE agent_feedback ADD COLUMN IF NOT EXISTS resolved_at VARCHAR(40)")
+        else:
+            cursor.execute("PRAGMA table_info(agent_feedback)")
+            columns = {row[1] for row in cursor.fetchall()}
+            additions = {
+                "feedback_type": "TEXT NOT NULL DEFAULT 'content'",
+                "status": "TEXT NOT NULL DEFAULT 'open'",
+                "resolution": "TEXT",
+                "resolved_by": "TEXT",
+                "resolved_at": "TEXT",
+            }
+            for name, definition in additions.items():
+                if name not in columns:
+                    cursor.execute(f"ALTER TABLE agent_feedback ADD COLUMN {name} {definition}")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS agent_run_metrics (
@@ -61,9 +84,12 @@ def save_feedback(
     username: str,
     rating: int,
     reason: str = "",
+    feedback_type: str = "content",
 ) -> None:
     if rating not in {-1, 1}:
         raise ValueError("反馈评分只能为 -1 或 1")
+    if feedback_type not in FEEDBACK_TYPES:
+        raise ValueError("反馈类型不合法")
     _initialize_schema()
     conn, placeholder = _connect_database()
     try:
@@ -79,22 +105,28 @@ def save_feedback(
         if placeholder == "%s":
             cursor.execute(
                 """
-                INSERT INTO agent_feedback (feedback_id, message_id, conversation_id, username, rating, reason, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO agent_feedback (feedback_id, message_id, conversation_id, username, rating, reason,
+                    feedback_type, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (message_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason,
-                    created_at = EXCLUDED.created_at
+                    feedback_type = EXCLUDED.feedback_type, status = EXCLUDED.status, created_at = EXCLUDED.created_at,
+                    resolution = NULL, resolved_by = NULL, resolved_at = NULL
                 """,
-                (uuid.uuid4().hex[:16], message_id, conversation_id, username, rating, reason.strip()[:500], _now()),
+                (uuid.uuid4().hex[:16], message_id, conversation_id, username, rating, reason.strip()[:500],
+                 feedback_type, "open" if rating == -1 else "resolved", _now()),
             )
         else:
             cursor.execute(
                 """
-                INSERT INTO agent_feedback (feedback_id, message_id, conversation_id, username, rating, reason, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO agent_feedback (feedback_id, message_id, conversation_id, username, rating, reason,
+                    feedback_type, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(message_id) DO UPDATE SET rating = excluded.rating, reason = excluded.reason,
-                    created_at = excluded.created_at
+                    feedback_type = excluded.feedback_type, status = excluded.status, created_at = excluded.created_at,
+                    resolution = NULL, resolved_by = NULL, resolved_at = NULL
                 """,
-                (uuid.uuid4().hex[:16], message_id, conversation_id, username, rating, reason.strip()[:500], _now()),
+                (uuid.uuid4().hex[:16], message_id, conversation_id, username, rating, reason.strip()[:500],
+                 feedback_type, "open" if rating == -1 else "resolved", _now()),
             )
         conn.commit()
         cursor.close()
@@ -110,14 +142,17 @@ def load_feedback(conversation_id: str, username: str) -> dict[str, dict[str, An
     try:
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT message_id, rating, reason, created_at FROM agent_feedback "
+            f"SELECT feedback_id, message_id, rating, reason, feedback_type, status, resolution, created_at FROM agent_feedback "
             f"WHERE conversation_id = {placeholder} AND username = {placeholder}",
             (conversation_id, username),
         )
         rows = cursor.fetchall()
         cursor.close()
         return {
-            row[0]: {"rating": row[1], "reason": row[2] or "", "created_at": row[3]}
+            row[1]: {
+                "feedback_id": row[0], "rating": row[2], "reason": row[3] or "", "feedback_type": row[4],
+                "status": row[5], "resolution": row[6] or "", "created_at": row[7],
+            }
             for row in rows
         }
     finally:
@@ -200,5 +235,55 @@ def get_quality_summary() -> dict[str, Any]:
             "feedback_count": int(feedback_count),
             "helpful_rate": (float(helpful_count) / float(feedback_count)) if feedback_count else None,
         }
+    finally:
+        conn.close()
+
+
+def list_feedback_issues(status: str | None = None) -> list[dict[str, Any]]:
+    """返回负反馈待办，不读取原始业务提问或模型完整回复。"""
+    _initialize_schema()
+    if status is not None and status not in ISSUE_STATUSES:
+        raise ValueError("处理状态不合法")
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        query = (
+            "SELECT feedback_id, conversation_id, username, feedback_type, status, reason, resolution, "
+            "resolved_by, created_at, resolved_at FROM agent_feedback WHERE rating = -1"
+        )
+        params: tuple = ()
+        if status:
+            query += f" AND status = {placeholder}"
+            params = (status,)
+        query += " ORDER BY created_at DESC LIMIT 100"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        cursor.close()
+        fields = [
+            "feedback_id", "conversation_id", "username", "feedback_type", "status", "reason",
+            "resolution", "resolved_by", "created_at", "resolved_at",
+        ]
+        return [dict(zip(fields, row)) for row in rows]
+    finally:
+        conn.close()
+
+
+def update_feedback_issue(feedback_id: str, status: str, resolution: str, resolved_by: str) -> None:
+    if status not in ISSUE_STATUSES:
+        raise ValueError("处理状态不合法")
+    _initialize_schema()
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE agent_feedback SET status = {placeholder}, resolution = {placeholder}, "
+            f"resolved_by = {placeholder}, resolved_at = {placeholder} WHERE feedback_id = {placeholder} "
+            f"AND rating = -1",
+            (status, resolution.strip()[:500], resolved_by, _now(), feedback_id),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError("反馈待办不存在")
+        conn.commit()
+        cursor.close()
     finally:
         conn.close()
