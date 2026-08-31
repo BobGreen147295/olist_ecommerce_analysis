@@ -160,15 +160,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def load_tasks(path: Optional[Path] = None) -> list[dict[str, Any]]:
+def load_tasks(path: Optional[Path] = None, owner: Optional[str] = None) -> list[dict[str, Any]]:
     if path is None and _use_database():
-        return _db_load_tasks()
+        tasks = _db_load_tasks()
+        return tasks if owner is None else [task for task in tasks if task.get("owner") == owner]
     path = path or TASKS_PATH
     if not path.exists():
         return []
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-        return value if isinstance(value, list) else []
+        tasks = value if isinstance(value, list) else []
+        return tasks if owner is None else [task for task in tasks if task.get("owner") == owner]
     except (OSError, json.JSONDecodeError):
         return []
 
@@ -190,6 +192,7 @@ def create_task(
     question: str = "",
     source_diagnosis: Optional[dict] = None,
     path: Optional[Path] = None,
+    owner: Optional[str] = None,
 ) -> dict[str, Any]:
     now = _now()
     task = {
@@ -199,6 +202,7 @@ def create_task(
         "updated_at": now,
         "source_question": question,
         "source_diagnosis": source_diagnosis or {},
+        "owner": owner,
     }
     for field in EDITABLE_FIELDS:
         if field in draft:
@@ -216,10 +220,13 @@ def update_task(
     task_id: str,
     updates: dict[str, Any],
     path: Optional[Path] = None,
+    owner: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     tasks = load_tasks(path)
     for task in tasks:
         if task.get("task_id") != task_id:
+            continue
+        if owner is not None and task.get("owner") != owner:
             continue
         for field, value in updates.items():
             if field in EDITABLE_FIELDS:
@@ -243,11 +250,14 @@ def complete_task(
     task_id: str,
     result: dict[str, Any],
     path: Optional[Path] = None,
+    owner: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """写入实验结果并将任务置为 completed。"""
     tasks = load_tasks(path)
     for task in tasks:
         if task.get("task_id") != task_id:
+            continue
+        if owner is not None and task.get("owner") != owner:
             continue
         if task.get("status") != "confirmed":
             raise ValueError("只有 confirmed 状态的任务可以回填结果")

@@ -19,6 +19,15 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from src.agent.evaluation import evaluate_experiment
+from src.agent.account_store import (
+    append_message,
+    authenticate_user,
+    create_conversation,
+    create_user,
+    ensure_admin_account,
+    list_conversations,
+    load_messages,
+)
 from src.agent.task_store import (
     check_database_connection,
     complete_task,
@@ -39,24 +48,59 @@ def _get_setting(name: str, default: str = "") -> str:
     return str(value or os.environ.get(name, default)).strip()
 
 
-def _require_access() -> None:
-    """云端设置 APP_PASSWORD 后启用登录；未设置时保持本地免登录。"""
-    configured_password = _get_setting("APP_PASSWORD")
-    if not configured_password:
+def _require_login() -> None:
+    """使用数据库账号登录；未配置数据库时回退为本地开发免登录。"""
+    if not _get_setting("DATABASE_URL"):
+        st.session_state.current_user = {"username": "local", "role": "admin"}
         return
+    admin_username = _get_setting("APP_ADMIN_USERNAME", "olist_admin")
+    admin_password = _get_setting("APP_ADMIN_PASSWORD") or _get_setting("APP_PASSWORD")
+    if not admin_password:
+        st.error("缺少 APP_ADMIN_PASSWORD，请在 Streamlit Secrets 中配置管理员密码。")
+        st.stop()
+    try:
+        ensure_admin_account(admin_username, admin_password)
+    except Exception as exc:
+        st.error(f"账号服务暂不可用：{type(exc).__name__}")
+        st.stop()
 
-    if st.session_state.get("authenticated"):
+    if st.session_state.get("current_user"):
         return
 
     st.title("🛒 Olist AI 运营分析系统")
-    st.subheader("访问验证")
-    st.caption("这是受保护的运营分析应用，请输入访问密码。")
-    password = st.text_input("访问密码", type="password")
-    if st.button("进入系统", type="primary", use_container_width=True):
-        if password == configured_password:
-            st.session_state.authenticated = True
-            st.rerun()
-        st.error("访问密码不正确")
+    st.caption("登录后可恢复自己的历史分析和运营任务。")
+    login_tab, register_tab = st.tabs(["登录", "创建账号"])
+    with login_tab:
+        with st.form("login_form"):
+            username = st.text_input("用户名")
+            password = st.text_input("密码", type="password")
+            submitted = st.form_submit_button("登录", type="primary", use_container_width=True)
+        if submitted:
+            user = authenticate_user(username.strip(), password)
+            if user:
+                st.session_state.current_user = user
+                st.session_state.agent_calls = 0
+                st.rerun()
+            st.error("用户名或密码不正确")
+    with register_tab:
+        registration_code = _get_setting("APP_REGISTRATION_CODE")
+        if not registration_code:
+            st.info("管理员暂未开放注册邀请码，请联系管理员获取账号。")
+        else:
+            with st.form("register_form"):
+                username = st.text_input("用户名（3-32 位英文、数字、_ 或 -）", key="register_username")
+                password = st.text_input("密码（至少 8 位）", type="password", key="register_password")
+                invite_code = st.text_input("邀请码", type="password")
+                submitted = st.form_submit_button("创建账号", use_container_width=True)
+            if submitted:
+                try:
+                    user = create_user(username.strip(), password, invite_code, registration_code)
+                    st.session_state.current_user = user
+                    st.session_state.agent_calls = 0
+                    st.success("账号创建成功，正在进入系统。")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
     st.stop()
 
 
@@ -72,6 +116,28 @@ def _check_usage_limit() -> bool:
         return False
     st.session_state.agent_calls = used + 1
     return True
+
+
+def _restore_conversation(conversation_id: str | None, username: str) -> None:
+    """从数据库恢复某个会话，同时让 Agent 获得同一份多轮上下文。"""
+    messages = load_messages(conversation_id, username) if conversation_id else []
+    history = [{"role": item["role"], "content": item["content"]} for item in messages]
+    st.session_state.active_conversation_id = conversation_id
+    st.session_state.chat_history = history
+    if st.session_state.get("agent_session"):
+        st.session_state.agent_session.history = history.copy()
+
+
+def _ensure_active_conversation(username: str, first_message: str) -> str | None:
+    """仅在首次提问时创建会话，避免产生空白对话记录。"""
+    if not _get_setting("DATABASE_URL"):
+        return None
+    conversation_id = st.session_state.get("active_conversation_id")
+    if conversation_id:
+        return conversation_id
+    conversation = create_conversation(username, first_message.replace("\n", " ")[:60])
+    st.session_state.active_conversation_id = conversation["conversation_id"]
+    return conversation["conversation_id"]
 
 
 def _show_evidence_cards(diagnosis: dict) -> None:
@@ -173,7 +239,7 @@ st.set_page_config(
     layout="wide",
 )
 
-_require_access()
+_require_login()
 
 # ── 页面标题 ──────────────────────────────────────
 st.title("🛒 Olist 电商 AI 运营分析系统")
@@ -383,6 +449,34 @@ with tab_chat:
             st.session_state.agent_available = False
             st.session_state.agent_error = str(e)
 
+    current_user = st.session_state.get("current_user", {"username": "local", "role": "admin"})
+    current_username = current_user["username"]
+    task_owner = None if current_user.get("role") == "admin" else current_username
+    if _get_setting("DATABASE_URL"):
+        conversations = list_conversations(current_username)
+        if "active_conversation_id" not in st.session_state:
+            latest_id = conversations[0]["conversation_id"] if conversations else None
+            _restore_conversation(latest_id, current_username)
+
+        with st.sidebar:
+            st.divider()
+            st.subheader("🗂️ 历史对话")
+            if st.button("＋ 新建对话", use_container_width=True):
+                _restore_conversation(None, current_username)
+                st.rerun()
+            conversation_map = {item["conversation_id"]: item["title"] for item in conversations}
+            conversation_ids = [None, *conversation_map.keys()]
+            active_id = st.session_state.get("active_conversation_id")
+            selected_id = st.selectbox(
+                "切换对话",
+                options=conversation_ids,
+                index=conversation_ids.index(active_id) if active_id in conversation_ids else 0,
+                format_func=lambda value: "新对话（尚未保存）" if value is None else conversation_map[value],
+            )
+            if selected_id != active_id:
+                _restore_conversation(selected_id, current_username)
+                st.rerun()
+
     # ── 快捷问题 ────────────────────────────────
     st.subheader("💬 AI 运营顾问")
     st.caption("用自然语言提问，Agent 自动查询数据、分析、生成策略。支持多轮追问。")
@@ -426,6 +520,13 @@ with tab_chat:
     actual_input = user_input or st.session_state.pop("pending_question", None)
 
     if actual_input:
+        if st.session_state.agent_available and not _check_usage_limit():
+            st.rerun()
+
+        active_conversation_id = _ensure_active_conversation(current_username, actual_input)
+        if active_conversation_id:
+            append_message(active_conversation_id, current_username, "user", actual_input)
+
         # 显示用户消息
         st.session_state.chat_history.append({"role": "user", "content": actual_input})
 
@@ -441,10 +542,8 @@ with tab_chat:
                 f"3. Python 依赖已安装: `pip install -r requirements.txt`"
             )
             st.session_state.chat_history.append({"role": "assistant", "content": fallback})
-            st.rerun()
-
-        if not _check_usage_limit():
-            st.session_state.chat_history.pop()
+            if active_conversation_id:
+                append_message(active_conversation_id, current_username, "assistant", fallback)
             st.rerun()
 
         # ── 调用 Agent ────────────────────────
@@ -508,6 +607,8 @@ with tab_chat:
 
         # 添加助手消息到历史
         st.session_state.chat_history.append({"role": "assistant", "content": reply})
+        if active_conversation_id:
+            append_message(active_conversation_id, current_username, "assistant", reply)
 
         # 限制历史长度（每轮 = user + assistant，保留最近 20 轮）
         max_messages = 40
@@ -538,13 +639,14 @@ with tab_chat:
                          "budget": budget, "duration_days": duration},
                         question=st.session_state.get("last_question", ""),
                         source_diagnosis=st.session_state.get("last_diagnosis", {}),
+                        owner=current_username,
                     )
                     st.success(f"任务 {task['task_id']} 已保存为草稿")
                     st.rerun()
         else:
             st.info("完成一次 Agent 诊断后，这里会出现可编辑的运营任务草稿。")
 
-        tasks = load_tasks()
+        tasks = load_tasks(owner=task_owner)
         if tasks:
             st.divider()
             st.caption(f"已保存任务：{len(tasks)} 条")
@@ -572,11 +674,11 @@ with tab_chat:
                 col_confirm, col_reject = st.columns(2)
                 with col_confirm:
                     if status == "draft" and st.button("确认任务", key=f"confirm_{task_id}", use_container_width=True):
-                        update_task(task_id, {"status": "confirmed"})
+                        update_task(task_id, {"status": "confirmed"}, owner=task_owner)
                         st.rerun()
                 with col_reject:
                     if status == "draft" and st.button("驳回任务", key=f"reject_{task_id}", use_container_width=True):
-                        update_task(task_id, {"status": "rejected"})
+                        update_task(task_id, {"status": "rejected"}, owner=task_owner)
                         st.rerun()
                 if status == "confirmed":
                     with st.form(f"result_form_{task_id}"):
@@ -599,7 +701,7 @@ with tab_chat:
                                 treatment_users, treatment_orders, treatment_revenue,
                                 control_users, control_orders, control_revenue, cost,
                             )
-                            complete_task(task_id, result)
+                            complete_task(task_id, result, owner=task_owner)
                             st.success(f"任务 {task_id} 已完成，效果结果已保存")
                             st.rerun()
                         except ValueError as exc:
@@ -626,6 +728,14 @@ with tab_chat:
     # ── 侧边栏: 会话控制 ────────────────────────
     with st.sidebar:
         st.divider()
+        st.caption(f"当前账号：**{current_username}**（{current_user.get('role', 'operator')}）")
+        if _get_setting("DATABASE_URL") and st.button("退出登录", use_container_width=True):
+            for key in ("current_user", "active_conversation_id", "chat_history", "last_action_drafts", "last_diagnosis"):
+                st.session_state.pop(key, None)
+            st.session_state.agent_calls = 0
+            if st.session_state.get("agent_session"):
+                st.session_state.agent_session.clear()
+            st.rerun()
         st.subheader("💬 对话控制")
 
         agent_status = "✅ Agent 就绪" if st.session_state.agent_available else "⚠️ Agent 不可用"
