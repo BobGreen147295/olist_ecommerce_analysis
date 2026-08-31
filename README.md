@@ -176,6 +176,8 @@ streamlit run dashboard/dashboard.py  # 交互仪表盘
 
 应用支持本地 Ollama 和云端 OpenAI 两种模型模式。公开部署时，在 Streamlit Secrets 中配置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_MODEL`，并建议配置 `APP_PASSWORD`、`MAX_AGENT_CALLS_PER_SESSION` 和 PostgreSQL `DATABASE_URL`。访问控制、调用上限、任务持久化和 Agent 运行观测说明见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
+PostgreSQL 接入后，运营任务会持久化保存；页面侧边栏会显示 `PostgreSQL / 连接正常`，用于演示部署状态。
+
 ---
 
 ## 💼 面试问答

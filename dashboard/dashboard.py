@@ -19,7 +19,14 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 from src.agent.evaluation import evaluate_experiment
-from src.agent.task_store import complete_task, create_task, load_tasks, update_task
+from src.agent.task_store import (
+    check_database_connection,
+    complete_task,
+    create_task,
+    load_tasks,
+    storage_mode,
+    update_task,
+)
 
 
 # ── 访问控制与成本保护 ─────────────────────────────
@@ -602,6 +609,11 @@ with tab_chat:
                     f"最近一次运行：{run_meta.get('duration_ms', 0)} ms · "
                     f"工具 {run_meta.get('successful_tool_count', 0)}/{run_meta.get('tool_count', 0)} 成功"
                 )
+        current_storage = storage_mode()
+        st.caption(f"任务存储：{current_storage}")
+        if current_storage == "PostgreSQL":
+            db_ok, db_message = check_database_connection()
+            st.caption(("✅ " if db_ok else "⚠️ ") + f"数据库：{db_message}")
 
     # ── 空状态引导 ──────────────────────────────
     if not st.session_state.chat_history:

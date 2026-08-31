@@ -26,11 +26,45 @@ EDITABLE_FIELDS = {
 
 
 def _database_url() -> str:
-    return os.environ.get("DATABASE_URL", "").strip()
+    value = os.environ.get("DATABASE_URL", "").strip()
+    if value:
+        return value
+    # Streamlit Cloud 的 Secrets 不会自动注入 os.environ，需要在运行时读取。
+    try:
+        import streamlit as st
+        return str(st.secrets.get("DATABASE_URL", "") or "").strip()
+    except Exception:
+        return ""
 
 
 def _use_database() -> bool:
     return bool(_database_url())
+
+
+def storage_mode() -> str:
+    """返回当前任务存储模式，供页面展示且不暴露连接地址。"""
+    url = _database_url()
+    if url.startswith(("postgres://", "postgresql://")):
+        return "PostgreSQL"
+    if url.startswith("sqlite:///"):
+        return "SQLite"
+    return "本地 JSON"
+
+
+def check_database_connection() -> tuple[bool, str]:
+    """检查数据库连接，不返回账号、主机或连接串等敏感信息。"""
+    if not _use_database():
+        return False, "未配置 DATABASE_URL"
+    try:
+        conn, _ = _connect_database()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return True, "连接正常"
+    except Exception as exc:
+        return False, f"连接失败：{type(exc).__name__}"
 
 
 def _connect_database():

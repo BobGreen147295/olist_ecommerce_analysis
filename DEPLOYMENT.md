@@ -52,6 +52,8 @@ MAX_AGENT_CALLS_PER_SESSION=20
 
 配置 `DATABASE_URL` 后，运营任务会保存到 PostgreSQL；未配置时继续保存到本地 JSON。应用首次连接数据库时会自动创建 `operation_tasks` 表，不需要手动执行建表 SQL。推荐使用 Supabase、Neon 等托管 PostgreSQL，并将完整连接串放入 Secrets。
 
+项目同时提供 `scripts/postgres_schema.sql` 作为可审计的初始化脚本。页面侧边栏会显示当前任务存储模式和数据库连接状态，但不会展示连接地址或账号信息。
+
 ## Docker 部署
 
 ```bash
