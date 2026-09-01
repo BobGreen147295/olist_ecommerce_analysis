@@ -437,7 +437,7 @@ if active_connected_source:
 # ═══════════════════════════════════════════════════════
 
 tab_dashboard, tab_connections, tab_alerts, tab_chat = st.tabs(
-    ["Overview", "Data", "Opportunities", "Campaigns & Ask Agent"]
+    ["Overview", "Data", "Opportunities", "AI Co-pilot & Campaigns"]
 )
 
 
@@ -491,9 +491,15 @@ with tab_dashboard:
                         f"<p><b>Recommended next step:</b> {_safe_markdown(top_opportunity['suggested_action'])}</p></div>", unsafe_allow_html=True)
         with right:
             st.write("")
-            if st.button("Review opportunity", key="overview_review_opportunity", use_container_width=True):
+            if st.button("Ask AI Co-pilot", key="overview_ask_copilot", use_container_width=True):
                 st.session_state.pending_question = top_opportunity["agent_question"]
-                st.success("Opportunity prepared for review in Campaigns & Ask Agent.")
+                st.success("AI Co-pilot is preparing an evidence-backed diagnosis in the Campaigns workspace.")
+            if st.button("Generate campaign brief", key="overview_create_brief", use_container_width=True):
+                st.session_state.pending_question = (
+                    f"{top_opportunity['agent_question']} 请生成一份可审核的跨境召回活动 brief，"
+                    "包含受众、市场、语言、渠道、对照组、归因窗口和验证指标。"
+                )
+                st.success("AI Co-pilot is preparing a campaign brief in the Campaigns workspace.")
     else:
         st.info("No opportunity currently meets the configured evidence threshold. Connect current merchant data to begin continuous monitoring.")
     if connected_data_health and connected_data_health["consent_known_rate"] == 0:
@@ -919,8 +925,8 @@ with tab_chat:
     )
 
     # ── 快捷问题 ────────────────────────────────
-    st.subheader("💬 AI 运营顾问")
-    st.caption("用自然语言提问，Agent 自动查询数据、分析、生成策略。支持多轮追问。")
+    st.subheader("AI Co-pilot")
+    st.caption("Ask about an opportunity, generate a campaign brief, or improve the next experiment. The Co-pilot uses deterministic tools for evidence and never activates customers by itself.")
     if _get_setting("DATABASE_URL"):
         try:
             active_source = get_active_data_source()
@@ -936,12 +942,10 @@ with tab_chat:
             pass
 
     quick_questions = [
-        "分析最近半年的销售趋势",
-        "圣保罗州最近销量怎么样",
-        "客户流失情况如何，怎么挽回",
-        "支付方式分布有没有问题",
-        "哪些产品卖得好",
-        "客户分群情况怎么样",
+        "Analyze the latest sales trend",
+        "Which retention opportunity should we prioritize?",
+        "Create a high-value customer reactivation brief",
+        "What data is required before a live campaign?",
     ]
 
     # 快捷问题按钮行
@@ -970,7 +974,7 @@ with tab_chat:
 
     # ── 聊天输入框 ──────────────────────────────
     user_input = st.chat_input(
-        "输入你的运营问题，例如：\"分析最近半年的销售趋势\"",
+        "Ask about revenue, retention, campaign design, or experiment learning…",
         key="chat_input_main",
     )
 
@@ -1113,6 +1117,9 @@ with tab_chat:
             for idx, draft in enumerate(drafts):
                 key_prefix = f"draft_{idx}"
                 st.markdown(f"##### Draft: {draft.get('title', 'Retention campaign')}")
+                actions = draft.get("actions", []) if isinstance(draft.get("actions"), list) else []
+                if actions:
+                    st.info("**AI Co-pilot rationale** · " + " → ".join(str(action) for action in actions[:3]))
                 with st.form(f"campaign_brief_{idx}"):
                     audience_step, message_step, measurement_step, approval_step = st.tabs([
                         "1 · Audience", "2 · Message & offer", "3 · Measurement", "4 · Approval",
@@ -1300,6 +1307,15 @@ with tab_chat:
                             f"Refund-adjusted: {'Yes' if result.get('revenue_net_of_refunds') else 'No'}"
                         )
                         st.info(f"**{verdict_title}**：{verdict_detail}")
+                        if st.button("Ask AI to improve the next test", key=f"improve_test_{task_id}", use_container_width=True):
+                            st.session_state.pending_question = (
+                                f"请复盘这次 {result.get('measurement_mode', 'simulation')} 活动："
+                                f"市场 {task.get('market', '待确认')}，渠道 {task.get('channel', '待确认')}，"
+                                f"实验组转化率 {result.get('treatment_conversion', 0):.2%}，"
+                                f"对照组转化率 {result.get('control_conversion', 0):.2%}，"
+                                f"ROI {result.get('roi')}。请基于这些结果提出下一轮可验证的活动改进 brief。"
+                            )
+                            st.success("AI Co-pilot is preparing the next-test recommendation above.")
 
     # ── 管理员质量看板 ─────────────────────────────
     if current_user.get("role") == "admin" and _get_setting("DATABASE_URL"):
