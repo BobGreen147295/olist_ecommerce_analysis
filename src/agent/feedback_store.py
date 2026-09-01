@@ -72,6 +72,24 @@ def _initialize_schema() -> None:
             )
             """
         )
+        metric_additions = {
+            "evidence_coverage": "REAL",
+            "source_citation_rate": "REAL",
+            "action_completeness": "REAL",
+            "quality_score": "REAL",
+            "model_provider": "VARCHAR(24)",
+            "model_name": "VARCHAR(80)",
+            "evaluation_version": "VARCHAR(24)",
+        }
+        if placeholder == "%s":
+            for name, definition in metric_additions.items():
+                cursor.execute(f"ALTER TABLE agent_run_metrics ADD COLUMN IF NOT EXISTS {name} {definition}")
+        else:
+            cursor.execute("PRAGMA table_info(agent_run_metrics)")
+            metric_columns = {row[1] for row in cursor.fetchall()}
+            for name, definition in metric_additions.items():
+                if name not in metric_columns:
+                    cursor.execute(f"ALTER TABLE agent_run_metrics ADD COLUMN {name} {definition}")
         conn.commit()
         cursor.close()
     finally:
@@ -178,13 +196,22 @@ def record_run_metric(username: str, conversation_id: str | None, run_meta: dict
             int(run_meta.get("action_count", 0) or 0),
             bool(run_meta.get("structured_output")),
             bool(run_meta.get("error")),
+            run_meta.get("evidence_coverage"),
+            run_meta.get("source_citation_rate"),
+            run_meta.get("action_completeness"),
+            run_meta.get("quality_score"),
+            str(run_meta.get("model_provider", "unknown"))[:24],
+            str(run_meta.get("model_name", "unknown"))[:80],
+            str(run_meta.get("evaluation_version", ""))[:24],
         )
         if placeholder == "%s":
             cursor.execute(
                 """
                 INSERT INTO agent_run_metrics (run_id, conversation_id, username, created_at, duration_ms,
-                    tool_count, successful_tool_count, finding_count, action_count, structured_output, has_error)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    tool_count, successful_tool_count, finding_count, action_count, structured_output, has_error,
+                    evidence_coverage, source_citation_rate, action_completeness, quality_score, model_provider,
+                    model_name, evaluation_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (run_id) DO NOTHING
                 """,
                 values,
@@ -193,8 +220,10 @@ def record_run_metric(username: str, conversation_id: str | None, run_meta: dict
             cursor.execute(
                 """
                 INSERT INTO agent_run_metrics (run_id, conversation_id, username, created_at, duration_ms,
-                    tool_count, successful_tool_count, finding_count, action_count, structured_output, has_error)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    tool_count, successful_tool_count, finding_count, action_count, structured_output, has_error,
+                    evidence_coverage, source_citation_rate, action_completeness, quality_score, model_provider,
+                    model_name, evaluation_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id) DO NOTHING
                 """,
                 values,
@@ -234,6 +263,46 @@ def get_quality_summary() -> dict[str, Any]:
             "error_rate": float(error_rate),
             "feedback_count": int(feedback_count),
             "helpful_rate": (float(helpful_count) / float(feedback_count)) if feedback_count else None,
+        }
+    finally:
+        conn.close()
+
+
+def get_answer_quality_summary() -> dict[str, Any]:
+    """汇总真实回答的确定性质量指标，不返回用户问题或完整回答。"""
+    _initialize_schema()
+    conn, _ = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT COUNT(*), COALESCE(AVG(quality_score), 0), COALESCE(AVG(evidence_coverage), 0),
+               COALESCE(AVG(source_citation_rate), 0), COALESCE(AVG(action_completeness), 0)
+               FROM agent_run_metrics WHERE evaluation_version IS NOT NULL AND evaluation_version <> ''"""
+        )
+        row = cursor.fetchone()
+        cursor.execute(
+            """SELECT model_provider, model_name, evaluation_version, COUNT(*), COALESCE(AVG(quality_score), 0),
+               COALESCE(AVG(evidence_coverage), 0), COALESCE(AVG(source_citation_rate), 0),
+               COALESCE(AVG(action_completeness), 0)
+               FROM agent_run_metrics WHERE evaluation_version IS NOT NULL AND evaluation_version <> ''
+               GROUP BY model_provider, model_name, evaluation_version ORDER BY COUNT(*) DESC"""
+        )
+        model_rows = cursor.fetchall()
+        cursor.close()
+        return {
+            "evaluated_runs": int(row[0]),
+            "quality_score": float(row[1]),
+            "evidence_coverage": float(row[2]),
+            "source_citation_rate": float(row[3]),
+            "action_completeness": float(row[4]),
+            "by_model": [
+                {
+                    "provider": item[0] or "unknown", "model": item[1] or "unknown", "version": item[2] or "unknown",
+                    "runs": int(item[3]), "quality_score": float(item[4]), "evidence_coverage": float(item[5]),
+                    "source_citation_rate": float(item[6]), "action_completeness": float(item[7]),
+                }
+                for item in model_rows
+            ],
         }
     finally:
         conn.close()

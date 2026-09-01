@@ -68,5 +68,12 @@ CREATE TABLE IF NOT EXISTS agent_run_metrics (
     finding_count INTEGER NOT NULL,
     action_count INTEGER NOT NULL,
     structured_output BOOLEAN NOT NULL,
-    has_error BOOLEAN NOT NULL
+    has_error BOOLEAN NOT NULL,
+    evidence_coverage DOUBLE PRECISION,
+    source_citation_rate DOUBLE PRECISION,
+    action_completeness DOUBLE PRECISION,
+    quality_score DOUBLE PRECISION,
+    model_provider VARCHAR(24),
+    model_name VARCHAR(80),
+    evaluation_version VARCHAR(24)
 );

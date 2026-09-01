@@ -29,6 +29,7 @@ from src.agent.account_store import (
     load_messages,
 )
 from src.agent.feedback_store import (
+    get_answer_quality_summary,
     get_feedback_operations_summary,
     get_quality_summary,
     list_feedback_issues,
@@ -853,6 +854,7 @@ with tab_chat:
         with st.expander("📈 Agent 质量看板", expanded=False):
             quality = get_quality_summary()
             feedback_operations = get_feedback_operations_summary()
+            answer_quality = get_answer_quality_summary()
             all_tasks = load_tasks()
             completed_results = [
                 task.get("result", {}) for task in all_tasks
@@ -911,6 +913,30 @@ with tab_chat:
                 st.bar_chart(pd.DataFrame(feedback_type_rows).set_index("类型")[["反馈数", "待处理"]])
             else:
                 st.caption("暂无负反馈数据；收到反馈后将按类型展示产品改进优先级。")
+
+            st.markdown("##### 🧠 真实回答质量（qa_v1）")
+            if answer_quality["evaluated_runs"]:
+                answer_a, answer_b, answer_c, answer_d = st.columns(4)
+                answer_a.metric("已评测回答", f"{answer_quality['evaluated_runs']} 次")
+                answer_b.metric("综合质量分", f"{answer_quality['quality_score']:.0%}")
+                answer_c.metric("证据覆盖率", f"{answer_quality['evidence_coverage']:.0%}")
+                answer_d.metric("策略完整度", f"{answer_quality['action_completeness']:.0%}")
+                model_quality_rows = [
+                    {
+                        "模型": f"{item['provider']} / {item['model']}",
+                        "评测版本": item["version"],
+                        "回答数": item["runs"],
+                        "综合质量分": f"{item['quality_score']:.0%}",
+                        "证据覆盖率": f"{item['evidence_coverage']:.0%}",
+                        "来源标注率": f"{item['source_citation_rate']:.0%}",
+                        "策略完整度": f"{item['action_completeness']:.0%}",
+                    }
+                    for item in answer_quality["by_model"]
+                ]
+                st.dataframe(pd.DataFrame(model_quality_rows), use_container_width=True, hide_index=True)
+                st.caption("综合质量分 = 证据覆盖率 45% + 来源标注率 25% + 策略完整度 30%。评分只基于结构化输出，不让模型自评。")
+            else:
+                st.caption("暂无 qa_v1 数据。完成一次新的 Agent 对话后，系统将自动记录真实回答质量。")
 
         with st.expander("📥 用户反馈待办中心", expanded=False):
             status_filter = st.selectbox(
