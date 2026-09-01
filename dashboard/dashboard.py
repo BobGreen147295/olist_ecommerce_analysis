@@ -915,6 +915,11 @@ with tab_chat:
                 st.caption("暂无负反馈数据；收到反馈后将按类型展示产品改进优先级。")
 
             st.markdown("##### 🧠 真实回答质量（qa_v1）")
+            st.info(
+                "**评分说明**：综合质量分 = 证据覆盖率 × 45% + 来源标注率 × 25% + 策略完整度 × 30%。  "
+                "证据覆盖率衡量每条结论是否附有数据证据；来源标注率衡量是否写明数据/工具来源；"
+                "策略完整度衡量任务是否具备行动、人群、渠道、周期和目标指标。"
+            )
             if answer_quality["evaluated_runs"]:
                 answer_a, answer_b, answer_c, answer_d = st.columns(4)
                 answer_a.metric("已评测回答", f"{answer_quality['evaluated_runs']} 次")
@@ -934,7 +939,7 @@ with tab_chat:
                     for item in answer_quality["by_model"]
                 ]
                 st.dataframe(pd.DataFrame(model_quality_rows), use_container_width=True, hide_index=True)
-                st.caption("综合质量分 = 证据覆盖率 45% + 来源标注率 25% + 策略完整度 30%。评分只基于结构化输出，不让模型自评。")
+                st.caption("评分只基于结构化输出，不让模型自评；它用于比较回答的可核验性与可执行性，不替代人工业务判断。")
             else:
                 st.caption("暂无 qa_v1 数据。完成一次新的 Agent 对话后，系统将自动记录真实回答质量。")
 
