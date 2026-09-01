@@ -42,6 +42,34 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
     ON chat_messages (conversation_id, created_at ASC);
 
+CREATE TABLE IF NOT EXISTS commerce_data_sources (
+    source_id VARCHAR(32) PRIMARY KEY,
+    display_name VARCHAR(120) NOT NULL,
+    source_type VARCHAR(24) NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by VARCHAR(32) NOT NULL,
+    created_at VARCHAR(40) NOT NULL,
+    record_count INTEGER NOT NULL,
+    coverage_start VARCHAR(40),
+    coverage_end VARCHAR(40),
+    mapping_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS commerce_orders (
+    source_id VARCHAR(32) NOT NULL,
+    order_id VARCHAR(120) NOT NULL,
+    customer_id VARCHAR(120),
+    ordered_at VARCHAR(40) NOT NULL,
+    total_amount DOUBLE PRECISION NOT NULL,
+    currency VARCHAR(12),
+    status VARCHAR(48),
+    PRIMARY KEY (source_id, order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_commerce_orders_source_time
+    ON commerce_orders (source_id, ordered_at ASC);
+
 CREATE TABLE IF NOT EXISTS agent_feedback (
     feedback_id VARCHAR(32) PRIMARY KEY,
     message_id VARCHAR(32) UNIQUE NOT NULL,

@@ -10,6 +10,8 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional
 
+from .commerce_store import get_connected_sales_trend
+
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
 
@@ -100,6 +102,12 @@ def query_sales_by_region(region: str) -> dict:
 def query_sales_trend(months: int = 6) -> dict:
     """从 sales_trends.csv 查近 N 个月趋势"""
     try:
+        try:
+            connected_result = get_connected_sales_trend(months)
+        except RuntimeError:
+            connected_result = None
+        if connected_result is not None:
+            return connected_result
         df = _read_csv("sales_trends.csv")
         if df is None:
             return {"success": False, "data": None, "summary": "sales_trends.csv 文件不存在"}

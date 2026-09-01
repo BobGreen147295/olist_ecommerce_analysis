@@ -40,6 +40,7 @@ from src.agent.feedback_store import (
 )
 from src.agent.regression_eval import run_tool_routing_regression
 from src.agent.alerting import generate_operational_alerts
+from src.agent.commerce_store import get_active_data_source, import_order_csv, list_data_sources, preview_order_csv
 from src.agent.task_store import (
     check_database_connection,
     complete_task,
@@ -350,7 +351,9 @@ region_analysis = data["region_analysis"]
 # Tab 布局
 # ═══════════════════════════════════════════════════════
 
-tab_dashboard, tab_alerts, tab_chat = st.tabs(["📊 数据看板", "🚨 主动经营预警", "💬 AI 运营顾问"])
+tab_dashboard, tab_connections, tab_alerts, tab_chat = st.tabs(
+    ["📊 数据看板", "🔌 数据连接", "🚨 主动经营预警", "💬 AI 运营顾问"]
+)
 
 
 # ╔═════════════════════════════════════════════════════╗
@@ -519,7 +522,101 @@ with tab_dashboard:
 
 
 # ╔═════════════════════════════════════════════════════╗
-# ║              TAB 2: 主动经营预警                    ║
+# ║              TAB 2: 数据连接                        ║
+# ╚═════════════════════════════════════════════════════╝
+
+with tab_connections:
+    page_user = st.session_state.get("current_user", {"username": "local", "role": "admin"})
+    st.subheader("🔌 通用订单数据连接")
+    st.caption("先接入订单 CSV，后续可复用同一字段模型接入 Shopify、Saleor、Medusa。导入后，销售趋势 Agent 会优先使用该数据源。")
+    if page_user.get("role") != "admin":
+        st.info("数据源是全局经营资产，仅管理员可以连接或切换数据源。")
+    elif not _get_setting("DATABASE_URL"):
+        st.warning("请先配置 PostgreSQL DATABASE_URL。连接数据需要持久化存储，不能只保存在临时页面会话中。")
+    else:
+        uploaded_orders = st.file_uploader("上传订单 CSV", type=["csv"], key="order_csv_upload")
+        if uploaded_orders is not None:
+            try:
+                preview = preview_order_csv(uploaded_orders.getvalue())
+                st.success(f"已读取 {preview['row_count']:,} 行，识别到 {len(preview['columns'])} 个字段。")
+                st.dataframe(pd.DataFrame(preview["sample"]), use_container_width=True, hide_index=True)
+                columns = preview["columns"]
+                mapping_options = ["", *columns]
+
+                def suggested_index(candidates: tuple[str, ...]) -> int:
+                    lowered = {column.lower(): index for index, column in enumerate(columns, start=1)}
+                    for candidate in candidates:
+                        if candidate in lowered:
+                            return lowered[candidate]
+                    return 0
+
+                with st.form("order_mapping_form"):
+                    source_name = st.text_input("数据源名称", value=uploaded_orders.name.rsplit(".", 1)[0])
+                    st.markdown("**字段映射**：带 * 的字段为必填。订单金额应为单笔订单的最终支付金额。")
+                    map_left, map_right = st.columns(2)
+                    with map_left:
+                        order_id_column = st.selectbox(
+                            "订单号 *", mapping_options, index=suggested_index(("order_id", "id", "order_number", "name"))
+                        )
+                        ordered_at_column = st.selectbox(
+                            "下单时间 *", mapping_options,
+                            index=suggested_index(("ordered_at", "created_at", "order_date", "order_created_at", "date")),
+                        )
+                        total_amount_column = st.selectbox(
+                            "订单金额 *", mapping_options,
+                            index=suggested_index(("total_amount", "total_price", "payment_value", "amount", "revenue")),
+                        )
+                    with map_right:
+                        customer_id_column = st.selectbox(
+                            "客户 ID（可选）", mapping_options,
+                            index=suggested_index(("customer_id", "customer", "customer_email")),
+                        )
+                        status_column = st.selectbox(
+                            "订单状态（可选）", mapping_options, index=suggested_index(("status", "financial_status", "order_status"))
+                        )
+                        currency_column = st.selectbox(
+                            "币种（可选）", mapping_options, index=suggested_index(("currency", "currency_code"))
+                        )
+                    import_submitted = st.form_submit_button("导入并设为当前数据源", use_container_width=True)
+                if import_submitted:
+                    try:
+                        result = import_order_csv(
+                            uploaded_orders.getvalue(), source_name,
+                            {
+                                "order_id": order_id_column, "ordered_at": ordered_at_column,
+                                "total_amount": total_amount_column, "customer_id": customer_id_column,
+                                "status": status_column, "currency": currency_column,
+                            },
+                            page_user["username"],
+                        )
+                        st.success(
+                            f"已导入 {result['record_count']:,} 笔订单，覆盖 {result['coverage_start']} 至 {result['coverage_end']}；"
+                            f"跳过 {result['rejected_count']:,} 行无效数据。"
+                        )
+                        st.rerun()
+                    except (ValueError, RuntimeError) as exc:
+                        st.error(str(exc))
+            except ValueError as exc:
+                st.error(str(exc))
+        sources = list_data_sources()
+        if sources:
+            st.markdown("##### 已连接数据源")
+            source_rows = [
+                {
+                    "当前使用": "✓" if source["is_active"] else "",
+                    "名称": source["display_name"], "类型": source["source_type"],
+                    "订单数": source["record_count"], "数据覆盖开始": source["coverage_start"],
+                    "数据覆盖结束": source["coverage_end"], "导入人": source["created_by"],
+                }
+                for source in sources
+            ]
+            st.dataframe(pd.DataFrame(source_rows), use_container_width=True, hide_index=True)
+        else:
+            st.info("尚未连接外部订单数据。未连接时，系统继续使用 Olist 演示数据。")
+
+
+# ╔═════════════════════════════════════════════════════╗
+# ║              TAB 3: 主动经营预警                    ║
 # ╚═════════════════════════════════════════════════════╝
 
 with tab_alerts:
@@ -605,6 +702,19 @@ with tab_chat:
     # ── 快捷问题 ────────────────────────────────
     st.subheader("💬 AI 运营顾问")
     st.caption("用自然语言提问，Agent 自动查询数据、分析、生成策略。支持多轮追问。")
+    if _get_setting("DATABASE_URL"):
+        try:
+            active_source = get_active_data_source()
+            if active_source:
+                st.info(
+                    f"当前 Agent 销售趋势数据源：**{active_source['display_name']}** · "
+                    f"{active_source['record_count']:,} 笔订单 · "
+                    f"覆盖至 {active_source['coverage_end']}"
+                )
+            else:
+                st.caption("当前使用 Olist 演示数据。管理员可在“🔌 数据连接”接入自己的订单 CSV。")
+        except RuntimeError:
+            pass
 
     quick_questions = [
         "分析最近半年的销售趋势",
