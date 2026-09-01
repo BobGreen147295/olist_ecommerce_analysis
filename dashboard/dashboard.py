@@ -39,6 +39,7 @@ from src.agent.feedback_store import (
     update_feedback_issue,
 )
 from src.agent.regression_eval import run_tool_routing_regression
+from src.agent.alerting import generate_operational_alerts
 from src.agent.task_store import (
     check_database_connection,
     complete_task,
@@ -348,7 +349,7 @@ region_analysis = data["region_analysis"]
 # Tab 布局
 # ═══════════════════════════════════════════════════════
 
-tab_dashboard, tab_chat = st.tabs(["📊 数据看板", "💬 AI 运营顾问"])
+tab_dashboard, tab_alerts, tab_chat = st.tabs(["📊 数据看板", "🚨 主动经营预警", "💬 AI 运营顾问"])
 
 
 # ╔═════════════════════════════════════════════════════╗
@@ -514,6 +515,36 @@ with tab_dashboard:
         with tab_trend:
             if not sales_trends.empty:
                 st.dataframe(sales_trends.head(20), use_container_width=True)
+
+
+# ╔═════════════════════════════════════════════════════╗
+# ║              TAB 2: 主动经营预警                    ║
+# ╚═════════════════════════════════════════════════════╝
+
+with tab_alerts:
+    st.subheader("🚨 主动经营预警中心")
+    st.caption("系统基于真实数据规则识别异常与机会；预警只生成待诊断事项，不会自动触达客户或调整预算。")
+    alerts, data_notes = generate_operational_alerts(sales_trends, rfm_analysis, region_analysis)
+    if data_notes:
+        with st.expander("🛡️ 数据完整性保护", expanded=False):
+            for note in data_notes:
+                st.warning(note)
+    if not alerts:
+        st.success("当前没有达到阈值的经营预警。")
+    severity_labels = {"high": "高", "medium": "中", "low": "低"}
+    severity_icons = {"high": "🔴", "medium": "🟠", "low": "🟡"}
+    for alert in alerts:
+        with st.container(border=True):
+            header, badge = st.columns([8, 1])
+            header.markdown(f"#### {severity_icons[alert['severity']]} {alert['title']}")
+            badge.metric("优先级", severity_labels[alert["severity"]])
+            st.caption(f"{alert['category']} · 来源：{alert['source']}")
+            st.markdown(f"**数据证据**：{_safe_markdown(alert['evidence'])}")
+            st.markdown(f"**影响范围**：{alert['impact']}")
+            st.markdown(f"**建议动作**：{alert['suggested_action']}")
+            if st.button("🤖 交给 Agent 深入诊断", key=f"alert_diagnose_{alert['id']}", use_container_width=True):
+                st.session_state.pending_question = alert["agent_question"]
+                st.success("已将预警交给 Agent，正在生成带证据的深入诊断与任务草稿。")
 
 
 # ╔═════════════════════════════════════════════════════╗
