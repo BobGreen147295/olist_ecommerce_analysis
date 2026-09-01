@@ -346,11 +346,40 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+      :root { --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --brand: #0f766e; --surface: #f8fafc; }
+      .stApp { background: #f8fafc; color: var(--ink); }
+      [data-testid="stHeader"] { background: rgba(248,250,252,.92); border-bottom: 1px solid var(--line); }
+      h1, h2, h3 { letter-spacing: -0.025em; color: #0f172a; }
+      h1 { font-weight: 750; }
+      [data-testid="stMetric"] { background: #ffffff; border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+      [data-testid="stMetricLabel"] { color: var(--muted); font-size: .78rem; letter-spacing: .02em; text-transform: uppercase; }
+      [data-testid="stMetricValue"] { color: var(--ink); font-weight: 700; }
+      .stButton > button { border-radius: 9px; font-weight: 600; min-height: 38px; }
+      [data-baseweb="tab-list"] { gap: 20px; border-bottom: 1px solid var(--line); }
+      [data-baseweb="tab"] { height: 46px; padding: 0 2px; color: var(--muted); font-weight: 600; }
+      [data-baseweb="tab"][aria-selected="true"] { color: var(--brand); }
+      .ro-eyebrow { color: var(--brand); font-size: .72rem; letter-spacing: .12em; font-weight: 750; text-transform: uppercase; }
+      .ro-hero { background: linear-gradient(120deg, #0f172a 0%, #134e4a 100%); color: white; border-radius: 18px; padding: 26px 30px; margin: 4px 0 24px; }
+      .ro-hero h2 { color: white; margin: 3px 0 7px; }
+      .ro-hero p { color: #d1fae5; margin: 0; max-width: 760px; }
+      .ro-badge { display: inline-block; border-radius: 99px; padding: 3px 8px; font-size: .72rem; font-weight: 700; letter-spacing: .04em; }
+      .ro-badge-sample { background:#fff7ed; color:#9a3412; }
+      .ro-badge-imported { background:#ecfdf5; color:#047857; }
+      .ro-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin: 8px 0; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 _require_login()
 
 # ── 页面标题 ──────────────────────────────────────
-st.title("🌍 Olist RevenueOps Agent")
-st.caption("面向跨境 DTC 商家的 AI 增长与留存运营智能体 · 数据诊断 → 人工审核 → 活动复盘")
+st.markdown('<div class="ro-eyebrow">Cross-border revenue operations</div>', unsafe_allow_html=True)
+st.title("Olist RevenueOps")
+st.caption("Find the next revenue opportunity. Review the action. Prove the outcome.")
 
 # 加载数据
 data = load_data()
@@ -408,7 +437,7 @@ if active_connected_source:
 # ═══════════════════════════════════════════════════════
 
 tab_dashboard, tab_connections, tab_alerts, tab_chat = st.tabs(
-    ["📊 经营概览", "🔌 数据连接", "🚨 主动机会", "💬 RevenueOps Agent"]
+    ["Overview", "Data", "Opportunities", "Campaigns & Ask Agent"]
 )
 
 
@@ -417,6 +446,60 @@ tab_dashboard, tab_connections, tab_alerts, tab_chat = st.tabs(
 # ╚═════════════════════════════════════════════════════╝
 
 with tab_dashboard:
+    page_user = st.session_state.get("current_user", {"username": "local", "role": "admin"})
+    overview_owner = None if page_user.get("role") == "admin" else page_user["username"]
+    overview_tasks = load_tasks(owner=overview_owner)
+    overview_alerts, _ = generate_operational_alerts(
+        sales_trends,
+        pd.DataFrame() if active_connected_source else rfm_analysis,
+        pd.DataFrame() if active_connected_source else region_analysis,
+    )
+    data_badge = "IMPORTED" if active_connected_source else "SAMPLE"
+    badge_class = "ro-badge-imported" if active_connected_source else "ro-badge-sample"
+    source_label = active_connected_source or "Olist sample baseline"
+    st.markdown(
+        f'<div class="ro-hero"><span class="ro-badge {badge_class}">{data_badge}</span>'
+        f'<h2>Revenue decisions, not dashboard noise.</h2>'
+        f'<p>Workspace: <b>{source_label}</b>. Opportunities are evidence-backed; campaigns always require human approval. '
+        'No customer outreach is automated by this product.</p></div>',
+        unsafe_allow_html=True,
+    )
+    observed_results = [
+        task.get("result", {}) for task in overview_tasks
+        if task.get("status") == "completed" and task.get("result", {}).get("measurement_mode") == "observed"
+    ]
+    observed_currency = _single_result_currency(observed_results) if observed_results else None
+    observed_incremental = sum(float(item.get("incremental_revenue", 0) or 0) for item in observed_results)
+    awaiting_approval = sum(task.get("status") == "draft" for task in overview_tasks)
+    active_campaigns = sum(task.get("status") == "confirmed" for task in overview_tasks)
+    metric_a, metric_b, metric_c, metric_d = st.columns(4)
+    metric_a.metric("Open opportunities", f"{len(overview_alerts)}")
+    metric_b.metric("Awaiting review", f"{awaiting_approval}")
+    metric_c.metric("Campaigns in progress", f"{active_campaigns}")
+    metric_d.metric(
+        "Validated incremental revenue",
+        _format_money(observed_incremental, observed_currency) if observed_currency else "No observed result",
+        help="Only results explicitly marked as observed are shown. Simulations never appear in this metric.",
+    )
+    st.markdown("#### Your next best decision")
+    if overview_alerts:
+        top_opportunity = overview_alerts[0]
+        left, right = st.columns([4, 1])
+        with left:
+            st.markdown(f"<div class='ro-card'><div class='ro-eyebrow'>{top_opportunity['severity']} priority · {top_opportunity['category']}</div>"
+                        f"<h3>{top_opportunity['title']}</h3><p><b>Evidence:</b> {_safe_markdown(top_opportunity['evidence'])}</p>"
+                        f"<p><b>Recommended next step:</b> {_safe_markdown(top_opportunity['suggested_action'])}</p></div>", unsafe_allow_html=True)
+        with right:
+            st.write("")
+            if st.button("Review opportunity", key="overview_review_opportunity", use_container_width=True):
+                st.session_state.pending_question = top_opportunity["agent_question"]
+                st.success("Opportunity prepared for review in Campaigns & Ask Agent.")
+    else:
+        st.info("No opportunity currently meets the configured evidence threshold. Connect current merchant data to begin continuous monitoring.")
+    if connected_data_health and connected_data_health["consent_known_rate"] == 0:
+        st.warning("Customer marketing consent is not connected. Analysis and simulation are available; real audience activation is intentionally unavailable.")
+    st.divider()
+    st.markdown("#### Data context")
 
     # ── KPI 指标卡 ──────────────────────────────
     if connected_data_health:
@@ -616,18 +699,18 @@ with tab_dashboard:
 
 with tab_connections:
     page_user = st.session_state.get("current_user", {"username": "local", "role": "admin"})
-    st.subheader("🔌 跨境订单数据连接")
-    st.caption("当前支持安全试用：导入脱敏订单 CSV。下一阶段将提供 Shopify OAuth 同步。导入后，销售趋势 Agent 优先使用该源；系统不会把不同币种直接合并。")
+    st.subheader("Commerce data")
+    st.caption("Start with a de-identified order CSV. Shopify OAuth is the next connector. Sales analysis uses the active source; currencies are never silently combined.")
     if page_user.get("role") != "admin":
-        st.info("数据源是全局经营资产，仅管理员可以连接或切换数据源。")
+        st.info("Data sources are workspace assets. Only administrators can connect or switch a source.")
     elif not _get_setting("DATABASE_URL"):
-        st.warning("请先配置 PostgreSQL DATABASE_URL。连接数据需要持久化存储，不能只保存在临时页面会话中。")
+        st.warning("Configure PostgreSQL before connecting merchant data. A source cannot be safely stored in a browser session.")
     else:
-        uploaded_orders = st.file_uploader("上传订单 CSV", type=["csv"], key="order_csv_upload")
+        uploaded_orders = st.file_uploader("Upload order CSV", type=["csv"], key="order_csv_upload")
         if uploaded_orders is not None:
             try:
                 preview = preview_order_csv(uploaded_orders.getvalue())
-                st.success(f"已读取 {preview['row_count']:,} 行，识别到 {len(preview['columns'])} 个字段。")
+                st.success(f"Read {preview['row_count']:,} rows and detected {len(preview['columns'])} columns.")
                 st.dataframe(pd.DataFrame(preview["sample"]), use_container_width=True, hide_index=True)
                 columns = preview["columns"]
                 mapping_options = ["", *columns]
@@ -640,56 +723,56 @@ with tab_connections:
                     return 0
 
                 with st.form("order_mapping_form"):
-                    source_name = st.text_input("数据源名称", value=uploaded_orders.name.rsplit(".", 1)[0])
-                    st.markdown("**字段映射**：带 * 的字段为必填。请不要上传邮箱、手机号、地址或支付卡信息。订单金额应为单笔订单的最终支付金额。")
+                    source_name = st.text_input("Source name", value=uploaded_orders.name.rsplit(".", 1)[0])
+                    st.markdown("**Map fields**: * is required. Do not upload email, phone, street address, or card data. Amount must be the final amount for one order.")
                     map_left, map_right = st.columns(2)
                     with map_left:
                         order_id_column = st.selectbox(
-                            "订单号 *", mapping_options, index=suggested_index(("order_id", "id", "order_number", "name"))
+                            "Order ID *", mapping_options, index=suggested_index(("order_id", "id", "order_number", "name"))
                         )
                         ordered_at_column = st.selectbox(
-                            "下单时间 *", mapping_options,
+                            "Order timestamp *", mapping_options,
                             index=suggested_index(("ordered_at", "created_at", "order_date", "order_created_at", "date")),
                         )
                         total_amount_column = st.selectbox(
-                            "订单金额 *", mapping_options,
+                            "Order total *", mapping_options,
                             index=suggested_index(("total_amount", "total_price", "payment_value", "amount", "revenue")),
                         )
                     with map_right:
                         customer_id_column = st.selectbox(
-                            "客户 ID（可选）", mapping_options,
+                            "Customer ID (optional)", mapping_options,
                             index=suggested_index(("customer_id", "customer", "customer_email")),
                         )
                         status_column = st.selectbox(
-                            "订单状态（可选）", mapping_options, index=suggested_index(("status", "financial_status", "order_status"))
+                            "Order status (optional)", mapping_options, index=suggested_index(("status", "financial_status", "order_status"))
                         )
                         currency_column = st.selectbox(
-                            "币种（可选）", mapping_options, index=suggested_index(("currency", "currency_code"))
+                            "Currency (optional)", mapping_options, index=suggested_index(("currency", "currency_code"))
                         )
                         market_column = st.selectbox(
-                            "市场 / 国家（可选）", mapping_options,
+                            "Market / country (optional)", mapping_options,
                             index=suggested_index(("market", "country", "shipping_country", "customer_country")),
                         )
                         timezone_column = st.selectbox(
-                            "订单时区（可选）", mapping_options, index=suggested_index(("timezone", "time_zone"))
+                            "Order timezone (optional)", mapping_options, index=suggested_index(("timezone", "time_zone"))
                         )
-                    st.markdown("**跨境默认口径**：当 CSV 没有逐单字段时，以下值会写入每笔订单；它们决定能否安全汇总和排期。")
+                    st.markdown("**Cross-border defaults**: Used per order when a source does not provide the field. These determine safe aggregation and scheduling.")
                     default_left, default_right, default_third = st.columns(3)
                     with default_left:
-                        default_currency = st.text_input("默认币种 *", value="USD", help="ISO 4217，例如 USD / GBP / EUR")
+                        default_currency = st.text_input("Default currency *", value="USD", help="ISO 4217, e.g. USD / GBP / EUR")
                     with default_right:
-                        default_market = st.text_input("默认市场", value="GLOBAL", help="两位国家代码，例如 US / GB / DE，或 GLOBAL")
+                        default_market = st.text_input("Default market", value="GLOBAL", help="Two-letter country code, e.g. US / GB / DE, or GLOBAL")
                     with default_third:
-                        default_timezone = st.text_input("默认时区", value="UTC", help="IANA 格式，例如 America/New_York")
+                        default_timezone = st.text_input("Default timezone", value="UTC", help="IANA format, e.g. America/New_York")
                     consent_column = st.selectbox(
-                        "营销同意状态（可选，真实触达前必需）", mapping_options,
+                        "Marketing consent (optional; required for live activation)", mapping_options,
                         index=suggested_index(("marketing_consent", "email_marketing_consent", "accepts_marketing", "subscribed")),
                     )
                     locale_column = st.selectbox(
-                        "客户语言 / Locale（可选）", mapping_options,
+                        "Customer language / locale (optional)", mapping_options,
                         index=suggested_index(("locale", "language", "customer_locale")),
                     )
-                    import_submitted = st.form_submit_button("导入并设为当前数据源", use_container_width=True)
+                    import_submitted = st.form_submit_button("Import and activate source", use_container_width=True)
                 if import_submitted:
                     try:
                         result = import_order_csv(
@@ -750,10 +833,10 @@ with tab_connections:
 # ╚═════════════════════════════════════════════════════╝
 
 with tab_alerts:
-    st.subheader("🚨 主动经营预警中心")
-    st.caption("系统基于真实数据规则识别异常与机会；预警只生成待诊断事项，不会自动触达客户或调整预算。")
+    st.subheader("Prioritized opportunities")
+    st.caption("Each opportunity is generated from deterministic data rules. Reviewing one creates a campaign brief; it never contacts a customer or changes spend automatically.")
     if active_connected_source:
-        st.info(f"当前预警销售数据源：**{active_connected_source}**。客户与地区预警将在接入对应数据后启用。")
+        st.info(f"Active sales source: **{active_connected_source}**. Customer and market opportunities unlock only when those fields are connected.")
     alerts, data_notes = generate_operational_alerts(
         sales_trends,
         pd.DataFrame() if active_connected_source else rfm_analysis,
@@ -764,7 +847,7 @@ with tab_alerts:
             for note in data_notes:
                 st.warning(note)
     if not alerts:
-        st.success("当前没有达到阈值的经营预警。")
+        st.success("No opportunity currently reaches the evidence threshold.")
     severity_labels = {"high": "高", "medium": "中", "low": "低"}
     severity_icons = {"high": "🔴", "medium": "🟠", "low": "🟡"}
     for alert in alerts:
