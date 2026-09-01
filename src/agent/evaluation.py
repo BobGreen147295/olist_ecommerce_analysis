@@ -7,6 +7,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import re
+
+
+_CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
+VALID_MEASUREMENT_MODES = {"simulation", "observed"}
 
 
 def evaluate_experiment(
@@ -17,6 +22,10 @@ def evaluate_experiment(
     control_orders: int,
     control_revenue: float,
     cost: float,
+    currency: str = "USD",
+    attribution_window_days: int = 7,
+    measurement_mode: str = "simulation",
+    revenue_net_of_refunds: bool = False,
 ) -> dict[str, Any]:
     values = {
         "treatment_users": treatment_users,
@@ -33,6 +42,13 @@ def evaluate_experiment(
         raise ValueError("实验组和对照组人数必须大于 0")
     if treatment_orders > treatment_users or control_orders > control_users:
         raise ValueError("订单数不能大于用户数")
+    currency = str(currency).upper().strip()
+    if not _CURRENCY_PATTERN.fullmatch(currency):
+        raise ValueError("币种必须是 3 位 ISO 4217 代码，例如 USD、GBP 或 EUR")
+    if not 1 <= int(attribution_window_days) <= 90:
+        raise ValueError("归因窗口必须是 1 到 90 天")
+    if measurement_mode not in VALID_MEASUREMENT_MODES:
+        raise ValueError("measurement_mode 仅支持 simulation 或 observed")
 
     treatment_conversion = treatment_orders / treatment_users
     control_conversion = control_orders / control_users
@@ -52,6 +68,10 @@ def evaluate_experiment(
         "control_orders": control_orders,
         "control_revenue": round(float(control_revenue), 2),
         "cost": round(float(cost), 2),
+        "currency": currency,
+        "attribution_window_days": int(attribution_window_days),
+        "measurement_mode": measurement_mode,
+        "revenue_net_of_refunds": bool(revenue_net_of_refunds),
         "treatment_conversion": round(treatment_conversion, 6),
         "control_conversion": round(control_conversion, 6),
         "conversion_uplift_pp": round(uplift * 100, 4),

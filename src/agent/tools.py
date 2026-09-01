@@ -10,7 +10,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional
 
-from .commerce_store import get_connected_sales_trend
+from .commerce_store import get_active_data_source, get_connected_sales_trend
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 
@@ -34,6 +34,29 @@ def _first_existing_column(df: pd.DataFrame, *candidates: str) -> Optional[str]:
     return None
 
 
+def _require_connected_capability(capability: str) -> Optional[dict]:
+    """Prevent a merchant question from silently falling back to Olist demo data.
+
+    The CSV connector currently normalizes orders only. Region, product, payment,
+    customer, consent, and churn answers need their own connected fields/connector.
+    """
+    try:
+        source = get_active_data_source()
+    except RuntimeError:
+        source = None
+    if not source:
+        return None
+    return {
+        "success": False,
+        "data": None,
+        "summary": (
+            f"当前已连接商家数据源「{source['display_name']}」，但尚未接入 {capability} 所需字段。"
+            "为避免混用 Olist 演示数据，系统不会回退到样本数据；请补充对应 CSV 字段或等待 Shopify 同步。"
+        ),
+        "source": source["display_name"],
+    }
+
+
 def _normalize_region_frame(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     """兼容旧版 geo 输出（customer_state / total_revenue / sales_per_million）。"""
     out = df.copy()
@@ -50,6 +73,9 @@ def _normalize_region_frame(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
 def query_sales_by_region(region: str) -> dict:
     """从 region_analysis.csv 查某地区每百万人销售额和排名"""
+    connected_guard = _require_connected_capability("市场/地区销售")
+    if connected_guard:
+        return connected_guard
     try:
         df = _read_csv("region_analysis.csv")
         if df is None:
@@ -153,6 +179,9 @@ def query_sales_trend(months: int = 6) -> dict:
 
 def query_payment_distribution() -> dict:
     """从 cleaned_payments.csv 查支付方式分布"""
+    connected_guard = _require_connected_capability("支付方式")
+    if connected_guard:
+        return connected_guard
     try:
         df = _read_csv("cleaned_payments.csv")
         if df is None:
@@ -189,6 +218,9 @@ def query_payment_distribution() -> dict:
 
 def query_user_segments() -> dict:
     """从 user_clusters.csv 查用户分群概况"""
+    connected_guard = _require_connected_capability("客户分群")
+    if connected_guard:
+        return connected_guard
     try:
         df = _read_csv("user_clusters.csv")
         if df is None:
@@ -228,6 +260,9 @@ def query_user_segments() -> dict:
 
 def query_rfm_summary() -> dict:
     """从 rfm_analysis.csv 查 RFM 分层统计"""
+    connected_guard = _require_connected_capability("客户 RFM")
+    if connected_guard:
+        return connected_guard
     try:
         df = _read_csv("rfm_analysis.csv")
         if df is None:
@@ -266,6 +301,9 @@ def query_rfm_summary() -> dict:
 
 def query_churn_risk() -> dict:
     """查询客户流失风险分布；优先使用 XGBoost 产物，兼容旧版购买预测产物。"""
+    connected_guard = _require_connected_capability("客户流失风险")
+    if connected_guard:
+        return connected_guard
     try:
         df = _read_csv("churn_predictions.csv")
         source = "churn_predictions.csv"
@@ -303,6 +341,9 @@ def query_churn_risk() -> dict:
 
 def query_top_categories(n: int = 10) -> dict:
     """从 cleaned_order_items.csv 查热销商品（按 product_id，数据集无品类表）"""
+    connected_guard = _require_connected_capability("商品/SKU")
+    if connected_guard:
+        return connected_guard
     try:
         df = _read_csv("cleaned_order_items.csv")
         if df is None:

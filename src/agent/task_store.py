@@ -22,6 +22,7 @@ VALID_STATUSES = {"draft", "confirmed", "rejected", "completed"}
 EDITABLE_FIELDS = {
     "priority", "title", "actions", "audience", "channel", "budget",
     "duration_days", "expected_metric", "expected_effect",
+    "market", "timezone", "locale", "attribution_window_days", "consent_basis",
 }
 
 
@@ -275,12 +276,19 @@ def complete_task(
 def launch_simulated_campaign(
     task_id: str,
     audience_size: int,
+    market: str = "GLOBAL",
+    timezone_name: str = "UTC",
+    locale: str = "en",
+    attribution_window_days: int = 7,
+    consent_basis: str = "not_applicable_simulation",
     path: Optional[Path] = None,
     owner: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """创建可审计的模拟营销活动，不调用外部触达服务。"""
     if audience_size <= 0:
         raise ValueError("模拟触达人数必须大于 0")
+    if not 1 <= int(attribution_window_days) <= 90:
+        raise ValueError("归因窗口必须是 1 到 90 天")
     tasks = load_tasks(path)
     for task in tasks:
         if task.get("task_id") != task_id:
@@ -301,6 +309,11 @@ def launch_simulated_campaign(
             "channel": task.get("channel", "待确认"),
             "budget": float(task.get("budget") or 0),
             "duration_days": int(task.get("duration_days") or 7),
+            "market": str(market).upper().strip() or "GLOBAL",
+            "timezone": str(timezone_name).strip() or "UTC",
+            "locale": str(locale).strip() or "en",
+            "attribution_window_days": int(attribution_window_days),
+            "consent_basis": str(consent_basis).strip() or "not_applicable_simulation",
         }
         task["updated_at"] = now
         if path is None and _use_database():

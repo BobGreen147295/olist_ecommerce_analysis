@@ -362,7 +362,7 @@ def recommend_node(state: AgentState) -> dict:
             detailed_data += f"\n[{r.get('tool')}]: {json.dumps(r['data'], ensure_ascii=False)[:800]}"
 
     prompt = f"""
-你是资深电商运营顾问。基于分析结果和数据（及对话历史），生成 3-5 条可执行的运营策略。
+你是服务跨境 DTC 商家的 Revenue Operations 顾问。基于分析结果和数据（及对话历史），生成 3-5 条可执行、可复盘的运营策略。
 
 {history_text}
 用户当前问题: "{query}"
@@ -374,10 +374,11 @@ def recommend_node(state: AgentState) -> dict:
 
 要求:
 1. 每条策略包含: 优先级(P0/P1/P2)、策略标题、3个具体行动点
-2. 行动点必须具体（渠道、金额、时间），不能空泛
-3. 预估预期效果（数字）
-4. 如果是追问，聚焦用户追问的方向，给出更具体的建议
-5. 如果数据不足，给出数据补充建议
+2. 行动点必须具体（渠道、金额、时间），不能空泛；不得建议未经人工批准的自动触达
+3. 明确目标市场、内容语言和 1-90 天归因窗口；不知道时必须写“待确认”，不要编造
+4. 预估预期效果（数字）必须说明需要通过 A/B 测试验证
+5. 如果是追问，聚焦用户追问的方向，给出更具体的建议
+6. 如果数据不足，给出数据补充建议；没有营销同意状态时，不得声称可以触达真实客户
 
 请严格返回 JSON 对象，不要返回 Markdown。格式:
 {{
@@ -390,6 +391,11 @@ def recommend_node(state: AgentState) -> dict:
       "channel": "触达渠道",
       "budget": null,
       "duration_days": 7,
+      "market": "US 或 待确认",
+      "timezone": "America/New_York 或 UTC",
+      "locale": "en-US 或 待确认",
+      "attribution_window_days": 7,
+      "consent_basis": "待商家确认",
       "expected_metric": "预期指标",
       "expected_effect": "基于数据的预期效果",
       "status": "draft"
@@ -420,6 +426,11 @@ def recommend_node(state: AgentState) -> dict:
             "channel": "待确认",
             "budget": None,
             "duration_days": 7,
+            "market": "待确认",
+            "timezone": "UTC",
+            "locale": "待确认",
+            "attribution_window_days": 7,
+            "consent_basis": "待商家确认",
             "expected_metric": "待确认",
             "expected_effect": "需通过 A/B 测试验证",
             "status": "draft",

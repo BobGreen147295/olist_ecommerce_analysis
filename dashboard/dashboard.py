@@ -42,6 +42,7 @@ from src.agent.regression_eval import run_tool_routing_regression
 from src.agent.alerting import generate_operational_alerts
 from src.agent.commerce_store import (
     get_active_data_source,
+    get_connected_data_health,
     get_connected_sales_trend,
     import_order_csv,
     list_data_sources,
@@ -73,6 +74,16 @@ def _safe_markdown(text: object) -> str:
     return str(text).replace("$", "\\$")
 
 
+def _format_money(value: object, currency: str = "USD") -> str:
+    """金额永远带币种，避免跨境经营场景把数值误读为同一口径。"""
+    return f"{str(currency).upper()} {float(value or 0):,.2f}"
+
+
+def _single_result_currency(results: list[dict]) -> str | None:
+    currencies = {str(item.get("currency", "USD")).upper() for item in results}
+    return next(iter(currencies)) if len(currencies) == 1 else None
+
+
 def _require_login() -> None:
     """使用数据库账号登录；未配置数据库时回退为本地开发免登录。"""
     if not _get_setting("DATABASE_URL"):
@@ -93,8 +104,8 @@ def _require_login() -> None:
     if st.session_state.get("current_user"):
         return
 
-    st.title("🛒 Olist AI 运营分析系统")
-    st.caption("登录后可恢复自己的历史分析和运营任务。")
+    st.title("🌍 Olist RevenueOps Agent")
+    st.caption("登录后可恢复自己的跨境经营分析、活动草稿与实验复盘。")
     login_tab, register_tab = st.tabs(["登录", "创建账号"])
     with login_tab:
         with st.form("login_form"):
@@ -330,7 +341,7 @@ def load_data():
 # ═══════════════════════════════════════════════════════
 
 st.set_page_config(
-    page_title="Olist AI 运营分析系统",
+    page_title="Olist RevenueOps Agent",
     page_icon="🛒",
     layout="wide",
 )
@@ -338,8 +349,8 @@ st.set_page_config(
 _require_login()
 
 # ── 页面标题 ──────────────────────────────────────
-st.title("🛒 Olist 电商 AI 运营分析系统")
-st.caption("巴西电商数据集 · LangGraph Agent · Ollama Qwen3 · XGBoost")
+st.title("🌍 Olist RevenueOps Agent")
+st.caption("面向跨境 DTC 商家的 AI 增长与留存运营智能体 · 数据诊断 → 人工审核 → 活动复盘")
 
 # 加载数据
 data = load_data()
@@ -355,8 +366,10 @@ region_analysis = data["region_analysis"]
 
 # 外部订单源接入后，销售趋势与预警优先使用该源；未接入时保持 Olist 演示数据。
 active_connected_source = None
+connected_data_health = None
 if _get_setting("DATABASE_URL"):
     try:
+        connected_data_health = get_connected_data_health()
         connected_trend = get_connected_sales_trend(36)
         if connected_trend and connected_trend.get("success"):
             connected_frame = pd.DataFrame(connected_trend["data"])
@@ -370,15 +383,32 @@ if _get_setting("DATABASE_URL"):
                 "period": connected_frame["period"].dt.to_period("M").astype(str),
             })
             active_connected_source = connected_trend.get("source")
+        elif connected_data_health:
+            active_connected_source = connected_data_health["source"]["display_name"]
     except RuntimeError:
         pass
+
+# Once merchant data is active, never render Olist-only breakdowns beside it.
+# Those dimensions become available only after the corresponding connected field
+# (customers, products, payment, etc.) is implemented.
+if active_connected_source:
+    if not connected_data_health or len(connected_data_health["currencies"]) != 1:
+        sales_trends = pd.DataFrame()
+    customers = pd.DataFrame()
+    orders = pd.DataFrame()
+    payments = pd.DataFrame()
+    order_items = pd.DataFrame()
+    user_clusters = pd.DataFrame()
+    rfm_analysis = pd.DataFrame()
+    population_data = pd.DataFrame()
+    region_analysis = pd.DataFrame()
 
 # ═══════════════════════════════════════════════════════
 # Tab 布局
 # ═══════════════════════════════════════════════════════
 
 tab_dashboard, tab_connections, tab_alerts, tab_chat = st.tabs(
-    ["📊 数据看板", "🔌 数据连接", "🚨 主动经营预警", "💬 AI 运营顾问"]
+    ["📊 经营概览", "🔌 数据连接", "🚨 主动机会", "💬 RevenueOps Agent"]
 )
 
 
@@ -389,7 +419,30 @@ tab_dashboard, tab_connections, tab_alerts, tab_chat = st.tabs(
 with tab_dashboard:
 
     # ── KPI 指标卡 ──────────────────────────────
-    if not orders.empty and not order_items.empty and not customers.empty:
+    if connected_data_health:
+        source = connected_data_health["source"]
+        currencies = connected_data_health["currencies"]
+        st.info(
+            f"当前展示导入数据源：**{source['display_name']}**。"
+            "所有金额仅在同一币种内汇总；数据为导入订单，不代表已验证的营销效果。"
+        )
+        if len(currencies) == 1 and not sales_trends.empty:
+            currency = currencies[0]
+            total_orders = int(sales_trends["order_count"].sum())
+            total_sales = float(sales_trends["total_sales"].sum())
+            avg_order_value = total_sales / total_orders if total_orders else 0
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("📦 导入订单数", f"{total_orders:,}")
+            col2.metric("💰 导入销售额", f"{currency} {total_sales:,.0f}")
+            col3.metric("🌐 覆盖市场", f"{len(connected_data_health['markets'])}")
+            col4.metric("🧾 平均客单价", f"{currency} {avg_order_value:,.2f}")
+        else:
+            st.warning(
+                "该数据源包含多个币种。为避免错误的 GMV/ROI，系统不会跨币种相加；"
+                "请按市场或币种拆分导入，或等待后续 FX 报表模块。"
+            )
+    elif not orders.empty and not order_items.empty and not customers.empty:
+        st.caption("当前为 Olist 样本数据演示，不是商家实时经营数据。")
         col1, col2, col3, col4 = st.columns(4)
         total_orders = len(orders)
         # 统一与事实表/Agent 的销售额口径：使用支付金额，而不是商品行金额。
@@ -405,6 +458,16 @@ with tab_dashboard:
         st.warning("⚠️ 数据文件未找到，请先运行数据清洗管道: `python src/data_cleaning.py`")
 
     st.divider()
+
+    if connected_data_health and len(connected_data_health["currencies"]) == 1 and not sales_trends.empty:
+        currency = connected_data_health["currencies"][0]
+        st.subheader("📈 已连接店铺月度销售趋势")
+        imported_chart = sales_trends[["period", "total_sales", "order_count"]].copy()
+        imported_chart = imported_chart.set_index("period").rename(
+            columns={"total_sales": f"销售额（{currency}）", "order_count": "订单数"}
+        )
+        st.line_chart(imported_chart)
+        st.caption("趋势按订单原始币种计算；跨币种源不会在此处聚合。客户、商品和渠道归因洞察将在接入对应字段后启用。")
 
     # ── 图表区：左右两栏 ─────────────────────────
     chart_col_left, chart_col_right = st.columns(2)
@@ -553,8 +616,8 @@ with tab_dashboard:
 
 with tab_connections:
     page_user = st.session_state.get("current_user", {"username": "local", "role": "admin"})
-    st.subheader("🔌 通用订单数据连接")
-    st.caption("先接入订单 CSV，后续可复用同一字段模型接入 Shopify、Saleor、Medusa。导入后，销售趋势 Agent 会优先使用该数据源。")
+    st.subheader("🔌 跨境订单数据连接")
+    st.caption("当前支持安全试用：导入脱敏订单 CSV。下一阶段将提供 Shopify OAuth 同步。导入后，销售趋势 Agent 优先使用该源；系统不会把不同币种直接合并。")
     if page_user.get("role") != "admin":
         st.info("数据源是全局经营资产，仅管理员可以连接或切换数据源。")
     elif not _get_setting("DATABASE_URL"):
@@ -578,7 +641,7 @@ with tab_connections:
 
                 with st.form("order_mapping_form"):
                     source_name = st.text_input("数据源名称", value=uploaded_orders.name.rsplit(".", 1)[0])
-                    st.markdown("**字段映射**：带 * 的字段为必填。订单金额应为单笔订单的最终支付金额。")
+                    st.markdown("**字段映射**：带 * 的字段为必填。请不要上传邮箱、手机号、地址或支付卡信息。订单金额应为单笔订单的最终支付金额。")
                     map_left, map_right = st.columns(2)
                     with map_left:
                         order_id_column = st.selectbox(
@@ -603,6 +666,29 @@ with tab_connections:
                         currency_column = st.selectbox(
                             "币种（可选）", mapping_options, index=suggested_index(("currency", "currency_code"))
                         )
+                        market_column = st.selectbox(
+                            "市场 / 国家（可选）", mapping_options,
+                            index=suggested_index(("market", "country", "shipping_country", "customer_country")),
+                        )
+                        timezone_column = st.selectbox(
+                            "订单时区（可选）", mapping_options, index=suggested_index(("timezone", "time_zone"))
+                        )
+                    st.markdown("**跨境默认口径**：当 CSV 没有逐单字段时，以下值会写入每笔订单；它们决定能否安全汇总和排期。")
+                    default_left, default_right, default_third = st.columns(3)
+                    with default_left:
+                        default_currency = st.text_input("默认币种 *", value="USD", help="ISO 4217，例如 USD / GBP / EUR")
+                    with default_right:
+                        default_market = st.text_input("默认市场", value="GLOBAL", help="两位国家代码，例如 US / GB / DE，或 GLOBAL")
+                    with default_third:
+                        default_timezone = st.text_input("默认时区", value="UTC", help="IANA 格式，例如 America/New_York")
+                    consent_column = st.selectbox(
+                        "营销同意状态（可选，真实触达前必需）", mapping_options,
+                        index=suggested_index(("marketing_consent", "email_marketing_consent", "accepts_marketing", "subscribed")),
+                    )
+                    locale_column = st.selectbox(
+                        "客户语言 / Locale（可选）", mapping_options,
+                        index=suggested_index(("locale", "language", "customer_locale")),
+                    )
                     import_submitted = st.form_submit_button("导入并设为当前数据源", use_container_width=True)
                 if import_submitted:
                     try:
@@ -611,13 +697,20 @@ with tab_connections:
                             {
                                 "order_id": order_id_column, "ordered_at": ordered_at_column,
                                 "total_amount": total_amount_column, "customer_id": customer_id_column,
-                                "status": status_column, "currency": currency_column,
+                                "status": status_column, "currency": currency_column, "market": market_column,
+                                "timezone": timezone_column, "marketing_consent": consent_column,
+                                "customer_locale": locale_column,
                             },
                             page_user["username"],
+                            {"currency": default_currency, "market": default_market, "timezone": default_timezone},
                         )
                         st.success(
                             f"已导入 {result['record_count']:,} 笔订单，覆盖 {result['coverage_start']} 至 {result['coverage_end']}；"
                             f"跳过 {result['rejected_count']:,} 行无效数据。"
+                        )
+                        st.caption(
+                            f"币种：{', '.join(result['currencies'])} · 市场：{', '.join(result['markets'])} · "
+                            f"含营销同意状态订单：{result['consent_known_rows']:,} 笔。"
                         )
                         st.rerun()
                     except (ValueError, RuntimeError) as exc:
@@ -637,6 +730,17 @@ with tab_connections:
                 for source in sources
             ]
             st.dataframe(pd.DataFrame(source_rows), use_container_width=True, hide_index=True)
+            if connected_data_health:
+                st.markdown("##### 🛡️ 数据可执行性检查")
+                health_a, health_b, health_c, health_d = st.columns(4)
+                health_a.metric("币种", ", ".join(connected_data_health["currencies"]) or "未识别")
+                health_b.metric("市场", f"{len(connected_data_health['markets'])} 个")
+                health_c.metric("时区", f"{len(connected_data_health['timezones'])} 个")
+                health_d.metric("营销同意覆盖", f"{connected_data_health['consent_known_rate']:.0%}")
+                if len(connected_data_health["currencies"]) != 1:
+                    st.warning("发现多币种。销售和 ROI 不会跨币种相加；请拆分市场数据或后续启用 FX 报表口径。")
+                if connected_data_health["consent_known_rate"] == 0:
+                    st.info("当前没有可用的营销同意状态。可进行分析和模拟，但不能用于真实受众触达。")
         else:
             st.info("尚未连接外部订单数据。未连接时，系统继续使用 Olist 演示数据。")
 
@@ -922,7 +1026,7 @@ with tab_chat:
     with st.expander("🧩 运营行动中心", expanded=bool(st.session_state.get("last_action_drafts"))):
         drafts = st.session_state.get("last_action_drafts", [])
         if drafts:
-            st.caption("Agent 只生成草稿；必须经人工确认后，才能创建模拟营销活动。系统不会自动触达真实客户。")
+            st.caption("Agent 只生成草稿；必须经人工确认后，才能创建模拟活动。当前版本不会自动触达真实客户，也不会导出含个人联系方式的名单。")
             for idx, draft in enumerate(drafts):
                 key_prefix = f"draft_{idx}"
                 title = st.text_input("任务标题", value=str(draft.get("title", "运营策略")), key=f"{key_prefix}_title")
@@ -931,10 +1035,23 @@ with tab_chat:
                 budget_default = float(draft.get("budget") or 0)
                 budget = st.number_input("预算", min_value=0.0, value=budget_default, step=100.0, key=f"{key_prefix}_budget")
                 duration = st.number_input("执行周期（天）", min_value=1, max_value=90, value=int(draft.get("duration_days") or 7), key=f"{key_prefix}_duration")
+                context_left, context_right, context_third = st.columns(3)
+                with context_left:
+                    market = st.text_input("目标市场", value=str(draft.get("market", "US")), key=f"{key_prefix}_market")
+                with context_right:
+                    locale = st.text_input("内容语言", value=str(draft.get("locale", "en-US")), key=f"{key_prefix}_locale")
+                with context_third:
+                    attribution_window = st.number_input(
+                        "归因窗口（天）", min_value=1, max_value=90,
+                        value=int(draft.get("attribution_window_days") or 7), key=f"{key_prefix}_attribution"
+                    )
                 if st.button("保存为草稿", key=f"{key_prefix}_save", use_container_width=True):
                     task = create_task(
                         {**draft, "title": title, "audience": audience, "channel": channel,
-                         "budget": budget, "duration_days": duration},
+                         "budget": budget, "duration_days": duration, "market": market,
+                         "locale": locale, "attribution_window_days": attribution_window,
+                         "timezone": str(draft.get("timezone", "UTC")),
+                         "consent_basis": "pending_merchant_confirmation"},
                         question=st.session_state.get("last_question", ""),
                         source_diagnosis=st.session_state.get("last_diagnosis", {}),
                         owner=current_username,
@@ -953,22 +1070,28 @@ with tab_chat:
                 if task.get("status") == "completed" and isinstance(task.get("result"), dict)
             ]
             if completed_results:
-                total_incremental_revenue = sum(
-                    float(result.get("incremental_revenue", 0) or 0) for result in completed_results
-                )
-                total_cost = sum(float(result.get("cost", 0) or 0) for result in completed_results)
-                portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost else None
                 st.markdown("##### 📈 运营实验累计效果")
-                metric_a, metric_b, metric_c, metric_d = st.columns(4)
-                metric_a.metric("已完成实验", f"{len(completed_results)} 个")
-                metric_b.metric("累计增量收入", f"R$ {total_incremental_revenue:,.0f}")
-                metric_c.metric("累计活动成本", f"R$ {total_cost:,.0f}")
-                metric_d.metric("组合 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "待录入成本")
+                result_currency = _single_result_currency(completed_results)
+                if result_currency:
+                    total_incremental_revenue = sum(float(result.get("incremental_revenue", 0) or 0) for result in completed_results)
+                    total_cost = sum(float(result.get("cost", 0) or 0) for result in completed_results)
+                    portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost else None
+                    metric_a, metric_b, metric_c, metric_d = st.columns(4)
+                    metric_a.metric("已完成实验", f"{len(completed_results)} 个")
+                    metric_b.metric("累计增量收入", _format_money(total_incremental_revenue, result_currency))
+                    metric_c.metric("累计活动成本", _format_money(total_cost, result_currency))
+                    metric_d.metric("组合 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "待录入成本")
+                else:
+                    st.info("已完成任务包含多币种结果；系统不会跨币种汇总收入、成本或 ROI。")
             for task in tasks[:10]:
                 task_id = task.get("task_id", "?")
                 status = task.get("status", "draft")
                 st.markdown(f"**[{status}] {task.get('title', '未命名任务')}** · `{task_id}`")
-                st.caption(f"人群：{task.get('audience', '未设置')} · 渠道：{task.get('channel', '未设置')} · 预算：{task.get('budget', 0)}")
+                st.caption(
+                    f"人群：{task.get('audience', '未设置')} · 渠道：{task.get('channel', '未设置')} · "
+                    f"市场：{task.get('market', '待确认')} · 语言：{task.get('locale', '待确认')} · "
+                    f"预算：{task.get('budget', 0)}"
+                )
                 col_confirm, col_reject = st.columns(2)
                 with col_confirm:
                     if status == "draft" and st.button("确认任务", key=f"confirm_{task_id}", use_container_width=True):
@@ -982,14 +1105,28 @@ with tab_chat:
                     execution = task.get("execution") if isinstance(task.get("execution"), dict) else None
                     if not execution:
                         with st.form(f"launch_form_{task_id}"):
-                            st.caption("模拟执行不会发送真实邮件、短信或优惠券，只创建可审计的活动记录。")
+                            st.caption("仅创建可审计模拟活动：不会发送真实邮件、短信或优惠券。真实触达需要已验证的营销同意状态与商家批准。")
                             audience_size = st.number_input(
                                 "模拟触达人数", min_value=1, value=200, step=50, key=f"audience_size_{task_id}"
+                            )
+                            exec_left, exec_right, exec_third = st.columns(3)
+                            with exec_left:
+                                execution_market = st.text_input("执行市场", value=str(task.get("market", "US")), key=f"market_{task_id}")
+                            with exec_right:
+                                execution_timezone = st.text_input("执行时区", value=str(task.get("timezone", "UTC")), key=f"timezone_{task_id}")
+                            with exec_third:
+                                execution_locale = st.text_input("内容语言", value=str(task.get("locale", "en-US")), key=f"locale_{task_id}")
+                            attribution_window = st.number_input(
+                                "归因窗口（天）", min_value=1, max_value=90,
+                                value=int(task.get("attribution_window_days") or 7), key=f"window_{task_id}"
                             )
                             launch_submitted = st.form_submit_button("🚀 创建模拟营销活动", use_container_width=True)
                         if launch_submitted:
                             try:
-                                launch_simulated_campaign(task_id, int(audience_size), owner=task_owner)
+                                launch_simulated_campaign(
+                                    task_id, int(audience_size), market=execution_market, timezone_name=execution_timezone,
+                                    locale=execution_locale, attribution_window_days=int(attribution_window), owner=task_owner,
+                                )
                                 st.success("模拟营销活动已创建，可在下方回填 A/B 实验结果。")
                                 st.rerun()
                             except ValueError as exc:
@@ -998,7 +1135,8 @@ with tab_chat:
                         st.success(
                             f"[SIMULATION] 活动 `{execution.get('campaign_id')}` 已启动 · "
                             f"{execution.get('channel', '待确认')} · 模拟触达 {execution.get('audience_size', 0):,} 人 · "
-                            f"周期 {execution.get('duration_days', 0)} 天"
+                            f"{execution.get('market', 'GLOBAL')} / {execution.get('locale', 'en')} · "
+                            f"归因窗口 {execution.get('attribution_window_days', 7)} 天"
                         )
                     if not execution:
                         continue
@@ -1015,12 +1153,21 @@ with tab_chat:
                             control_revenue = st.number_input("对照组收入", min_value=0.0, value=800.0, step=100.0, key=f"cr_{task_id}")
                         with c3:
                             cost = st.number_input("活动成本", min_value=0.0, value=float(task.get("budget") or 0), step=100.0, key=f"cost_{task_id}")
+                            result_currency = st.text_input(
+                                "结果币种", value=(connected_data_health["currencies"][0] if connected_data_health and len(connected_data_health["currencies"]) == 1 else "USD"),
+                                key=f"currency_{task_id}", help="实验与对照收入、成本必须使用同一币种"
+                            )
+                        revenue_net_of_refunds = st.checkbox("收入已扣除退款 / 退货", value=False, key=f"refunds_{task_id}")
                         submitted = st.form_submit_button("提交结果并完成任务", use_container_width=True)
                     if submitted:
                         try:
                             result = evaluate_experiment(
                                 treatment_users, treatment_orders, treatment_revenue,
                                 control_users, control_orders, control_revenue, cost,
+                                currency=result_currency,
+                                attribution_window_days=int(execution.get("attribution_window_days", 7)),
+                                measurement_mode="simulation",
+                                revenue_net_of_refunds=revenue_net_of_refunds,
                             )
                             complete_task(task_id, result, owner=task_owner)
                             st.success(f"任务 {task_id} 已完成，效果结果已保存")
@@ -1037,12 +1184,14 @@ with tab_chat:
                         metric_a, metric_b, metric_c, metric_d = st.columns(4)
                         metric_a.metric("实验组转化率", f"{result.get('treatment_conversion', 0):.2%}")
                         metric_b.metric("转化提升", f"{result.get('conversion_uplift_pp', 0):.2f} 个百分点")
-                        metric_c.metric("增量收入", f"R$ {float(result.get('incremental_revenue', 0) or 0):,.0f}")
+                        metric_c.metric("增量收入", _format_money(result.get("incremental_revenue"), result.get("currency", "USD")))
                         metric_d.metric("ROI", roi_text)
                         st.caption(
                             f"对照组转化率：{result.get('control_conversion', 0):.2%} · "
                             f"增量订单：{float(result.get('incremental_orders', 0) or 0):,.1f} · "
-                            f"活动成本：R$ {float(result.get('cost', 0) or 0):,.0f}"
+                            f"活动成本：{_format_money(result.get('cost'), result.get('currency', 'USD'))} · "
+                            f"归因窗口：{result.get('attribution_window_days', 7)} 天 · "
+                            f"结果类型：{result.get('measurement_mode', 'simulation')}"
                         )
                         st.info(f"**{verdict_title}**：{verdict_detail}")
 
@@ -1058,11 +1207,10 @@ with tab_chat:
                 if task.get("status") == "completed" and isinstance(task.get("result"), dict)
             ]
             adopted_count = sum(task.get("status") in {"confirmed", "completed"} for task in all_tasks)
-            total_incremental_revenue = sum(
-                float(result.get("incremental_revenue", 0) or 0) for result in completed_results
-            )
+            result_currency = _single_result_currency(completed_results) if completed_results else None
+            total_incremental_revenue = sum(float(result.get("incremental_revenue", 0) or 0) for result in completed_results)
             total_cost = sum(float(result.get("cost", 0) or 0) for result in completed_results)
-            portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost else None
+            portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost and result_currency else None
             metric_a, metric_b, metric_c, metric_d = st.columns(4)
             metric_a.metric("Agent 调用", f"{quality['total_runs']} 次")
             metric_b.metric("平均响应", f"{quality['avg_duration_ms']:.0f} ms")
@@ -1078,10 +1226,12 @@ with tab_chat:
             )
             metric_f.metric("反馈数量", f"{quality['feedback_count']} 条")
             metric_g.metric("任务采纳率", f"{adopted_count / len(all_tasks):.0%}" if all_tasks else "暂无任务")
-            metric_h.metric("已完成任务 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "暂无结果")
+            metric_h.metric("已完成任务 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "需同币种结果")
             st.caption(
                 f"错误率：{quality['error_rate']:.0%} · 已完成实验：{len(completed_results)} 个 · "
-                f"累计增量收入：R$ {total_incremental_revenue:,.0f}"
+                f"累计增量收入：{_format_money(total_incremental_revenue, result_currency)}"
+                if result_currency else
+                f"累计增量收入：多币种结果不做汇总"
             )
             st.markdown("##### 🔁 反馈闭环指标")
             ops_a, ops_b, ops_c, ops_d = st.columns(4)
@@ -1238,14 +1388,16 @@ with tab_chat:
         with chat_container:
             with st.chat_message("assistant"):
                 st.markdown("""
-                👋 你好！我是 **Olist AI 运营顾问**。
+                👋 你好！我是 **Olist RevenueOps Agent**。
 
                 我基于 **LangGraph Agent + Ollama (Qwen3:8b)** 运行，可以:
 
-                - 📊 **查询数据**: 自动调取地区销量、趋势、支付、分群、RFM、热销品类 6 类数据
-                - 🔍 **分析发现**: 基于真实数据给出关键洞察
-                - 💡 **策略建议**: 生成 P0-P2 优先级运营策略，含行动点和预期效果
+                - 📊 **连接并查询数据**: 支持 Olist 演示基线与已导入的跨境订单数据
+                - 🔍 **分析发现**: 基于可核验数据识别销售、留存与增长机会
+                - 💡 **策略建议**: 生成可审核的市场、语言、渠道与归因窗口配置
                 - 🔄 **多轮追问**: 支持连续追问，深入探讨某个方向
+
+                当前不会自动向真实消费者发送任何内容；真实触达需要商家批准及可验证的营销同意状态。
 
                 点击上方快捷问题开始，或在输入框自由提问 👆
                 """)

@@ -1,279 +1,197 @@
-# Olist AI 运营诊断 Copilot
+# Cross-border AI Revenue Operations Agent
 
-**版本**：v3.0  
-**状态**：产品化迭代基线  
-**定位**：面向中小电商运营人员的 AI 经营诊断与行动助手
+**Version**: v4.0
+**Status**: Product-definition baseline
+**Product name (working title)**: Olist RevenueOps Agent
 
-## 1. 产品定位
+## 1. First principle
 
-传统看板只能回答“发生了什么”，运营人员仍需要手工判断“为什么发生”和“下一步做什么”。本产品将订单、客户、商品、地区和支付数据转化为可解释的经营诊断，并进一步生成可编辑、可确认的运营任务。
+This product does not sell a chatbot, a dashboard, or a historical dataset. It helps cross-border DTC merchants produce measurable business results.
 
-核心闭环：
+> For an authorized merchant, identify a revenue opportunity, prepare an auditable campaign, wait for human approval, measure incremental impact, and use the outcome to improve the next action.
 
-```text
-数据同步 → 异常发现 → 证据分析 → 运营策略 → 用户确认 → 任务执行 → 效果回填
-```
-
-第一阶段不追求覆盖所有运营场景，先聚焦“销售下滑与客户召回”两个高频问题。
-
-当前版本已提供主动预警入口：预警由确定性数据规则触发，展示数据证据与完整性校验后，才交由 Agent 深入诊断。
-
-## 2. 目标用户
-
-### 主要用户：电商运营专员
-
-- 每日查看销售、订单和客户数据；
-- 需要快速定位异常原因；
-- 能执行优惠券、短信、邮件或 WhatsApp 召回；
-- 不一定具备 SQL 和机器学习能力。
-
-### 次要用户：运营经理
-
-- 查看异常和策略优先级；
-- 审核预算、人群和预期收益；
-- 追踪任务执行效果。
-
-## 3. 核心用户故事
-
-> 作为一名电商运营，我希望系统主动告诉我哪些经营指标异常、异常的证据是什么，并给出我可以确认和执行的运营任务，从而减少人工分析时间。
-
-## 4. V1 核心场景
-
-### 场景 A：销售异常诊断
-
-用户看到“最近销售额下降”，系统需要：
-
-1. 确认时间范围和指标口径；
-2. 查询销售趋势；
-3. 对比地区、支付方式、客户分层和商品表现；
-4. 输出异常程度、可能原因和证据；
-5. 生成待确认的运营任务。
-
-### 场景 B：客户召回
-
-用户询问“哪些客户应该优先召回”，系统需要：
-
-1. 查询 RFM 分层和风险评分；
-2. 按客户价值、最近购买时间和风险排序；
-3. 给出召回人群、触达渠道、预算和周期；
-4. 允许用户调整参数；
-5. 记录任务并等待效果数据回填。
-
-## 5. 产品流程
+The only meaningful product loop is:
 
 ```text
-用户问题或系统提醒
-        ↓
-确定指标、时间范围和目标人群
-        ↓
-Agent 选择确定性数据工具
-        ↓
-生成结构化证据
-        ↓
-生成诊断结论和置信度
-        ↓
-生成可编辑运营任务
-        ↓
-用户确认 / 修改 / 驳回
-        ↓
-创建模拟活动并记录结果
-        ↓
-回填实际指标，评估策略效果
+Authorized commerce data
+  -> opportunity detection
+  -> evidence-backed recommendation
+  -> merchant review and approval
+  -> channel-ready campaign package
+  -> delivery / result import
+  -> incrementality and ROI measurement
+  -> next-best action
 ```
 
-## 6. Agent 设计原则
+The product is initially built for Shopify-based cross-border DTC merchants serving overseas consumers. It is not positioned as a generic Chinese marketplace analytics tool.
 
-### 6.1 LLM 不直接计算业务指标
+## 2. Target users and job to be done
 
-销售额、订单数、环比、客户数量和风险占比必须由确定性工具计算。LLM 只负责意图理解、证据解释和策略组织。
+### Primary user: growth / retention operator at a cross-border DTC brand
 
-### 6.2 每个结论必须有证据
+- Runs a Shopify storefront and uses email, SMS, or WhatsApp-style owned channels;
+- Has order data but lacks time or analytical depth to segment customers and design controlled experiments;
+- Needs an explainable recommendation, an approval checkpoint, and an outcome they can defend to a manager.
 
-Agent 输出必须包含：
+### Economic buyer: founder, head of growth, or ecommerce manager
 
-- 结论；
-- 数据指标；
-- 时间范围；
-- 数据来源；
-- 计算口径；
-- 置信度或数据完整度。
+- Wants incremental revenue, repeat purchase, and lower wasted discount spend;
+- Will only authorize data access if permissions are minimal, reversible, and the expected return is credible.
 
-### 6.3 建议和执行分离
+### First job to be done
 
-Agent 可以生成任务草稿，但不能未经用户确认直接发送营销内容、修改预算或触达客户。当前版本的“执行”仅创建模拟营销活动和审计记录，不接入真实触达渠道。
+> When valuable customers become inactive, help me decide whom to re-engage, with which localized message and incentive, through which channel, and prove whether the action created incremental revenue.
 
-### 6.4 LLM 失败时可降级
+## 3. Product wedge: high-value customer reactivation
 
-模型不可用或输出格式错误时，系统仍应使用保底路由和确定性报表完成基础查询。
+V1 deliberately focuses on one narrow, measurable loop:
 
-## 7. 工具层规划
+1. Detect high-value customers who have become inactive;
+2. Form an eligible, consented audience and a holdout/control group;
+3. Produce localized campaign copy and an execution package for a connected channel;
+4. Require merchant approval before any external delivery;
+5. Ingest delivery and conversion results;
+6. Calculate incremental orders, incremental revenue, cost, and ROI with an explicit attribution window.
 
-当前工具：
+The product may recommend. It must never send a campaign, issue a discount, alter budget, or contact a customer without an explicit merchant action.
 
-| 工具 | 用途 |
+## 4. Trust exchange and data-access strategy
+
+Merchants do not grant access because the product says “AI.” They grant the minimum data required when the expected value exceeds the perceived risk and setup effort.
+
+| Adoption stage | Merchant commitment | Product return |
+|---|---|---|
+| Experience | No merchant data; demo or generated data | Product walkthrough and transparent sample results |
+| Safe trial | De-identified order CSV | First diagnostic and editable campaign plan |
+| Connected trial | OAuth/API read scope to Shopify | Automated data refresh and continuous opportunity detection |
+| Operating mode | Channel result sync, still merchant-approved delivery | Attributable revenue and next-best-action learning |
+
+The first production connector is Shopify. CSV remains a deliberately lower-trust onboarding path, not the long-term core experience.
+
+## 5. Canonical commerce data model
+
+All connectors must map into a canonical model. A connector does not get to redefine business metrics.
+
+### Orders (required for V1)
+
+| Canonical field | Required | Definition |
+|---|---:|---|
+| `order_id` | Yes | Immutable source order identifier |
+| `ordered_at` | Yes | ISO-8601 timestamp in UTC |
+| `total_amount` | Yes | Final order amount in the order currency, after discounts and before/after tax only when explicitly declared |
+| `currency` | Yes for cross-border production | ISO 4217 currency code, e.g. USD, GBP, EUR |
+| `customer_id` | Recommended | Stable pseudonymous customer identifier |
+| `market` | Recommended | Selling market / country or region code, e.g. US, GB, DE |
+| `timezone` | Recommended | IANA timezone used for local campaign scheduling |
+| `status` | Recommended | Paid/fulfilled/cancelled/refunded source status |
+
+### Customers and consent (required before real outbound execution)
+
+- Stable pseudonymous customer ID, never a prompt-time need for raw email or phone number;
+- Marketing consent state and consent updated time;
+- Locale / preferred language and market;
+- Suppression and unsubscribe state;
+- Raw contact details stay in the execution platform. The agent receives only the fields needed for segmentation and content selection.
+
+### Campaign and outcome (required for ROI claims)
+
+- Campaign ID, channel, market, locale, send time, attribution window, treatment/control audience size;
+- Incentive cost and non-incentive channel cost;
+- Delivery, conversion, order, and revenue outcomes;
+- Currency and FX conversion source if results are aggregated across currencies.
+
+## 6. Metrics and attribution rules
+
+- **Treatment conversion rate** = treatment orders / treatment eligible recipients;
+- **Control conversion rate** = control orders / control eligible customers;
+- **Incremental orders** = treatment recipients × (treatment conversion rate − control conversion rate);
+- **Incremental revenue** = incremental orders × control-group AOV;
+- **ROI** = (incremental revenue − campaign cost) / campaign cost.
+
+An ROI is only comparable within the same currency. Cross-currency portfolio reporting must either keep markets separate or state an FX source, rate date, and reporting currency. The interface must never label a simulated result as an actual business outcome.
+
+Every completed campaign result must record an attribution window, treatment/control eligibility rule, whether revenue is net of returns/refunds, currency, and observed vs simulated mode.
+
+## 7. Safety, privacy, and compliance by design
+
+- OAuth scopes and uploaded fields use the minimum necessary access;
+- merchants can disconnect a source and request deletion of imported data;
+- no automatic outreach; delivery always has an approval boundary;
+- no contact of people without a marketing-consent signal from the source system;
+- audience exports are pseudonymous by default and time-bound;
+- prompts and diagnostic logs do not include raw email, phone, full address, or payment data;
+- every recommendation shows source, coverage period, data completeness, and whether it is sample, simulated, or observed data;
+- regulatory implementation must be reviewed with counsel before production deployment in relevant markets.
+
+## 8. Product flow
+
+```text
+Shopify / CSV / future analytics connection
+        ↓
+Data validation: currency, time zone, order status, coverage, consent availability
+        ↓
+Deterministic opportunity detection
+        ↓
+Agent explanation + localized campaign draft
+        ↓
+Merchant edits audience, channel, language, offer, budget, attribution window
+        ↓
+Merchant approval
+        ↓
+Export / connected-channel handoff (never automatic in V1)
+        ↓
+Outcome import and controlled-experiment measurement
+        ↓
+Campaign learning record and next-best action
+```
+
+## 9. Current implementation and non-claims
+
+The repository provides an authenticated Streamlit product, PostgreSQL persistence, CSV order import, deterministic analysis tools, proactive alerts, editable operation tasks, simulated campaign records, A/B result calculation, feedback operations, and regression evaluation.
+
+It does **not** yet provide Shopify OAuth, customer-consent ingestion, live Email/SMS/WhatsApp delivery, or an observed-result connector. It must be described as a **cross-border RevenueOps prototype with a simulated execution loop**, not as a production marketing automation platform.
+
+Olist data is retained only as a transparent demonstration and regression baseline when no merchant data source is connected.
+
+## 10. Delivery roadmap
+
+### Phase A — Cross-border foundation (this iteration)
+
+- [x] Canonical order CSV connection
+- [ ] Require/order-protect currency, market, timezone and order-status metadata
+- [ ] Store campaign locale, attribution window, execution mode, and result currency
+- [ ] Replace Olist-first product language with cross-border DTC language
+- [ ] Clearly label sample / imported / simulated / observed data states
+
+### Phase B — Shopify connected trial
+
+- Shopify OAuth installation and minimum read scopes;
+- Incremental orders/customer/product sync;
+- Shopify data-quality and consent-readiness checks;
+- Automatic refresh, source health, and disconnect/delete controls.
+
+### Phase C — Human-approved activation
+
+- Klaviyo (first) campaign/audience handoff;
+- localized email draft, suppression-aware audience export, and approval log;
+- campaign delivery/result import;
+- observed vs simulated outcome separation.
+
+### Phase D — Revenue learning system
+
+- market-level holdout experimentation;
+- refund-adjusted revenue and explicit FX reporting;
+- strategy-performance learning by segment, channel, incentive, locale, and season;
+- pricing based on subscription plus verified outcome/value tier.
+
+## 11. Success criteria
+
+Product success is not number of chat sessions. Each phase has an economic proof point:
+
+| Phase | Evidence of progress |
 |---|---|
-| `query_sales_by_region` | 查询州级销售和人均销售 |
-| `query_sales_trend` | 查询近 N 个月销售趋势 |
-| `query_payment_distribution` | 查询支付方式和分期情况 |
-| `query_user_segments` | 查询 KMeans 用户分群 |
-| `query_rfm_summary` | 查询 RFM 客户价值分层 |
-| `query_churn_risk` | 查询客户风险分布 |
-| `query_top_categories` | 查询热销 SKU |
-
-后续新增工具必须同时提供：
-
-1. 输入参数定义；
-2. 输出字段定义；
-3. 数据来源；
-4. 异常情况；
-5. 单元测试；
-6. Agent 评测样例。
-
-## 8. 结构化输出协议
-
-诊断结果目标格式：
-
-```json
-{
-  "question": "客户流失情况如何",
-  "scope": {
-    "period": "最近90天",
-    "metric_definition": "按 customer_id 统计"
-  },
-  "findings": [
-    {
-      "title": "高风险客户占比较高",
-      "evidence": [
-        {"metric": "high_risk_customer_share", "value": 0.42}
-      ],
-      "source": "churn_predictions.csv",
-      "confidence": 0.86
-    }
-  ],
-  "action_drafts": [
-    {
-      "priority": "P0",
-      "title": "召回高价值高风险客户",
-      "audience": "高价值且高风险客户",
-      "channel": "Email",
-      "budget": 5000,
-      "duration_days": 7,
-      "expected_metric": "复购率",
-      "status": "draft"
-    }
-  ]
-}
-```
-
-自然语言展示可以由该结构化结果渲染，但不能只保留自然语言结果。
-
-## 9. 指标和数据规范
-
-### 9.1 统一指标
-
-- GMV：商品 `price` 汇总；
-- 支付金额：`payment_value` 汇总；
-- 订单数：去重后的 `order_id`；
-- 客户数：明确使用 `customer_id` 或 `customer_unique_id`；
-- 客单价：支付金额 ÷ 去重订单数。
-
-所有看板、工具、报告和 Prompt 必须使用同一套指标定义。
-
-### 9.2 数据状态
-
-页面和 Agent 结果必须显示：
-
-- 数据更新时间；
-- 数据覆盖区间；
-- 数据完整度；
-- 缺失表或缺失字段；
-- 是否使用代理标签。
-
-### 9.3 通用数据连接
-
-订单数据首先映射为统一字段：`order_id`、`ordered_at`、`total_amount`，可选映射 `customer_id`、`status`、`currency`。管理员上传并确认映射后，数据源进入 PostgreSQL；Agent 必须在回答中识别当前使用的数据源。Olist 数据集保留为无外部连接时的演示与回归基线。
-
-## 10. 流失风险产品定义
-
-当前 Olist 数据没有真实流失标签，因此 V1 不把模型宣传为真实流失预测，而定义为“召回优先级评分”。
-
-当前评分依据：
-
-```text
-客户价值 × 最近未购买时间 × 风险评分 × 可触达性
-```
-
-未来接入真实数据后，使用“未来 90 天是否复购”或“未来 90 天是否流失”作为监督学习标签，并进行时间切分，避免数据泄漏。
-
-## 11. 评测体系
-
-建立至少 30 条固定问题的 Agent 评测集，覆盖趋势、地区、支付、分群、RFM、召回和追问。
-
-核心指标：
-
-| 指标 | V1 目标 |
-|---|---:|
-| 工具选择准确率 | ≥90% |
-| 工具参数正确率 | ≥95% |
-| 数字引用准确率 | ≥95% |
-| 无证据结论率 | ≤5% |
-| 结构化输出通过率 | ≥95% |
-| 平均响应时间 | ≤30 秒 |
-| 用户策略采纳率 | 记录基线 |
-
-每次 Prompt、模型或工具变更都需要重新运行评测集。
-
-补充：线上真实回答使用 `qa_v1` 自动评测，记录证据覆盖率、来源标注率、策略完整度与综合质量分；原始对话不进入质量指标表。
-
-## 12. 开发路线图
-
-### Phase 1：可靠诊断基线
-
-- 完成统一指标定义；
-- 完成 7 个工具的 schema 和测试；
-- 完成证据链输出；
-- 增加数据更新时间和缺失提示；
-- [x] 建立 30 条工具路由回归评测集，覆盖趋势、地区、支付、分群、RFM、召回和商品场景。
-
-### Phase 2：运营任务闭环
-
-- 诊断结果生成任务草稿；
-- 支持修改人群、渠道、预算和周期；
-- 支持确认、驳回和保存；
-- 增加任务状态和执行记录。
-
-### Phase 3：效果评估
-
-- 接收活动实际发送人数、订单数和收入；
-- 计算复购率、增量收入、成本和 ROI；
-- 支持策略复盘；
-- 建立 A/B 测试或对照组。
-
-### Phase 4：生产化
-
-- CSV 迁移至数据库；
-- 增加定时同步；
-- 增加用户权限；
-- 增加日志、耗时和错误监控；
-- 部署可访问版本。
-
-## 13. 成功标准
-
-当运营人员可以在一次会话中完成以下流程时，产品达到 V1：
-
-```text
-提出问题
-→ 获得带证据的诊断
-→ 查看影响人群
-→ 调整预算和渠道
-→ 确认运营任务
-→ 查看任务状态和结果
-```
-
-最终产品价值不以“模型回答有多像人”为主要标准，而以以下结果衡量：
-
-- 是否减少分析耗时；
-- 是否提升诊断准确性；
-- 是否降低无依据建议；
-- 是否提高策略采纳率；
-- 是否带来可度量的业务改善。
+| Connected trial | A merchant or test store completes validated data connection within 15 minutes |
+| First value | A user saves and approves a campaign plan that is grounded in their data |
+| Activation | A merchant exports or hands off an approved eligible audience without violating consent constraints |
+| Outcome | At least one campaign has attributable treatment/control results with explicit currency and window |
+| Commercial validation | A pilot merchant repeats the loop because the decision or result is valuable enough to pay for |

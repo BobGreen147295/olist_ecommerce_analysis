@@ -64,6 +64,10 @@ CREATE TABLE IF NOT EXISTS commerce_orders (
     total_amount DOUBLE PRECISION NOT NULL,
     currency VARCHAR(12),
     status VARCHAR(48),
+    market VARCHAR(16),
+    timezone VARCHAR(64),
+    customer_locale VARCHAR(32),
+    marketing_consent VARCHAR(16),
     PRIMARY KEY (source_id, order_id)
 );
 
