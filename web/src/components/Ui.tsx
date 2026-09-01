@@ -1,0 +1,5 @@
+import type { ReactNode } from "react";
+
+export function StatusBadge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "success" | "warning" | "accent" | "danger" }) { return <span className={`status-badge status-${tone}`}>{children}</span>; }
+export function Metric({ label, value, detail, trend, tone = "default" }: { label: string; value: string; detail?: string; trend?: string; tone?: "default" | "positive" | "muted" }) { return <section className="metric-card"><p className="metric-label">{label}</p><p className={`metric-value metric-${tone}`}>{value}</p>{detail && <p className="metric-detail">{detail}</p>}{trend && <p className="metric-trend">{trend}</p>}</section>; }
+export function PageHeading({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-description">{description}</p></div>{action && <div className="heading-action">{action}</div>}</div>; }
