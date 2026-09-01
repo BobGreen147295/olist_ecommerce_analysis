@@ -8,6 +8,7 @@ const welcome: Message = {
   role: "assistant",
   content: "我是 RevenueOps AI Co-pilot。我可以解释当前机会、活动实验和数据缺口；所有建议均需人工确认，不会自动触达客户。",
 };
+const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
 
 function replyFor(question: string) {
   const normalized = question.toLowerCase();
@@ -26,19 +27,39 @@ function replyFor(question: string) {
 export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<Message[]>([welcome]);
   const [draft, setDraft] = useState("");
-  function send(event: FormEvent) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [agentMode, setAgentMode] = useState<"demo" | "agent" | "unavailable">(API_BASE_URL ? "agent" : "demo");
+  async function send(event: FormEvent) {
     event.preventDefault();
     const question = draft.trim();
-    if (!question) return;
-    setMessages((current) => [...current, { role: "user", content: question }, { role: "assistant", content: replyFor(question) }]);
+    if (!question || isLoading) return;
+    setMessages((current) => [...current, { role: "user", content: question }]);
     setDraft("");
+    if (!API_BASE_URL) {
+      setMessages((current) => [...current, { role: "assistant", content: replyFor(question) }]);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
+      const response = await fetch(`${API_BASE_URL}/v1/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: question, history }) });
+      const payload = await response.json();
+      if (!response.ok || !payload.answer) throw new Error(payload.error || "Agent 请求失败");
+      setAgentMode("agent");
+      setMessages((current) => [...current, { role: "assistant", content: payload.answer }]);
+    } catch {
+      setAgentMode("unavailable");
+      setMessages((current) => [...current, { role: "assistant", content: "实时 Agent 服务暂不可用。本次展示示例推理，不会把它当作真实商家结论。\n\n" + replyFor(question) }]);
+    } finally {
+      setIsLoading(false);
+    }
   }
   return <><button className={`copilot-scrim ${open ? "copilot-visible" : ""}`} onClick={onClose} aria-label="关闭 AI 对话" /><aside className={`copilot-panel ${open ? "copilot-open" : ""}`} aria-label="AI Co-pilot">
-    <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>运营智能问答</h2><span><i /> 示例推理 · 人工可控</span></div><button onClick={onClose} aria-label="关闭">×</button></header>
+    <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>运营智能问答</h2><span><i /> {agentMode === "agent" ? "服务端 Agent · 人工可控" : agentMode === "demo" ? "示例推理 · 人工可控" : "服务暂不可用 · 已降级"}</span></div><button onClick={onClose} aria-label="关闭">×</button></header>
     <div className="copilot-context">当前上下文：Northstar Commerce · 示例工作区<br />数据范围：订单历史、客户分层、模拟实验结果</div>
     <div className="copilot-messages">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={`copilot-message ${message.role}`}><span>{message.role === "assistant" ? "AI" : "你"}</span><p>{message.content}</p></div>)}</div>
     <div className="copilot-prompts"><button onClick={() => setDraft("为什么要先做流失客户召回？")}>为什么先做流失召回？</button><button onClick={() => setDraft("当前 ROI 可以相信吗？")}>当前 ROI 可以相信吗？</button><button onClick={() => setDraft("还缺哪些数据连接？")}>还缺哪些数据？</button></div>
-    <form className="copilot-compose" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="问一个运营问题…" rows={2} /><button type="submit">发送 ↑</button></form>
-    <p className="copilot-disclaimer">回答基于示例数据，不构成真实经营结论或自动执行指令。</p>
+    <form className="copilot-compose" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="问一个运营问题…" rows={2} /><button type="submit" disabled={isLoading}>{isLoading ? "分析中…" : "发送 ↑"}</button></form>
+    <p className="copilot-disclaimer">{agentMode === "agent" ? "回答由服务端 Agent 生成，仍需人工复核后执行。" : "回答基于示例数据，不构成真实经营结论或自动执行指令。"}</p>
   </aside></>;
 }

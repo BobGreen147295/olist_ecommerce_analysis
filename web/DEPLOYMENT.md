@@ -23,4 +23,4 @@ Every push to `main` will automatically redeploy the production site. Validate i
 
 ## Architecture boundary
 
-The Web frontend is intentionally static. The Python Agent, PostgreSQL/Supabase access, authentication, and provider secrets belong in a separately deployed server-side API. The browser will call that API over HTTPS; it will never hold database connection strings or service keys.
+The Web frontend is intentionally static. The Python Agent, PostgreSQL/Supabase access, authentication, and provider secrets belong in a separately deployed server-side API. The browser will call that API over HTTPS; it will never hold database connection strings or service keys. Once the API is deployed, set only its public URL as `NEXT_PUBLIC_REVENUEOPS_API_URL` in Cloudflare Pages and redeploy.
