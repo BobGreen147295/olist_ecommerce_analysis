@@ -1105,112 +1105,131 @@ with tab_chat:
     # ── 结构化证据展示 ─────────────────────────────
     _show_evidence_cards(st.session_state.get("last_diagnosis", {}))
 
-    # ── 运营任务：编辑、保存、确认/驳回 ─────────────────
-    with st.expander("🧩 运营行动中心", expanded=bool(st.session_state.get("last_action_drafts"))):
+    # ── Campaign workspace: human-reviewed, channel-safe execution ─────
+    with st.expander("Campaign workspace", expanded=True):
         drafts = st.session_state.get("last_action_drafts", [])
         if drafts:
-            st.caption("Agent 只生成草稿；必须经人工确认后，才能创建模拟活动。当前版本不会自动触达真实客户，也不会导出含个人联系方式的名单。")
+            st.caption("The Agent creates a brief, never a live send. Complete the four decision steps, then submit it for human review.")
             for idx, draft in enumerate(drafts):
                 key_prefix = f"draft_{idx}"
-                title = st.text_input("任务标题", value=str(draft.get("title", "运营策略")), key=f"{key_prefix}_title")
-                audience = st.text_input("目标人群", value=str(draft.get("audience", "待确认")), key=f"{key_prefix}_audience")
-                channel = st.text_input("触达渠道", value=str(draft.get("channel", "待确认")), key=f"{key_prefix}_channel")
-                budget_default = float(draft.get("budget") or 0)
-                budget = st.number_input("预算", min_value=0.0, value=budget_default, step=100.0, key=f"{key_prefix}_budget")
-                duration = st.number_input("执行周期（天）", min_value=1, max_value=90, value=int(draft.get("duration_days") or 7), key=f"{key_prefix}_duration")
-                context_left, context_right, context_third = st.columns(3)
-                with context_left:
-                    market = st.text_input("目标市场", value=str(draft.get("market", "US")), key=f"{key_prefix}_market")
-                with context_right:
-                    locale = st.text_input("内容语言", value=str(draft.get("locale", "en-US")), key=f"{key_prefix}_locale")
-                with context_third:
-                    attribution_window = st.number_input(
-                        "归因窗口（天）", min_value=1, max_value=90,
-                        value=int(draft.get("attribution_window_days") or 7), key=f"{key_prefix}_attribution"
-                    )
-                if st.button("保存为草稿", key=f"{key_prefix}_save", use_container_width=True):
+                st.markdown(f"##### Draft: {draft.get('title', 'Retention campaign')}")
+                with st.form(f"campaign_brief_{idx}"):
+                    audience_step, message_step, measurement_step, approval_step = st.tabs([
+                        "1 · Audience", "2 · Message & offer", "3 · Measurement", "4 · Approval",
+                    ])
+                    with audience_step:
+                        audience = st.text_input("Eligible audience", value=str(draft.get("audience", "To be defined")))
+                        st.caption("Use a pseudonymous segment rule. Live activation remains unavailable until marketing consent is connected.")
+                    with message_step:
+                        title = st.text_input("Campaign name", value=str(draft.get("title", "Retention campaign")))
+                        channel = st.selectbox(
+                            "Channel", options=["Email", "SMS", "WhatsApp", "Other / to be confirmed"],
+                            index=0 if str(draft.get("channel", "")).lower() in {"", "email", "待确认"} else 3,
+                        )
+                        market, locale = st.columns(2)
+                        with market:
+                            market_value = st.text_input("Market", value=str(draft.get("market", "US")))
+                        with locale:
+                            locale_value = st.text_input("Content locale", value=str(draft.get("locale", "en-US")))
+                    with measurement_step:
+                        budget_default = float(draft.get("budget") or 0)
+                        budget = st.number_input("Campaign cost budget", min_value=0.0, value=budget_default, step=100.0)
+                        duration = st.number_input("Campaign duration (days)", min_value=1, max_value=90, value=int(draft.get("duration_days") or 7))
+                        attribution_window = st.number_input(
+                            "Attribution window (days)", min_value=1, max_value=90,
+                            value=int(draft.get("attribution_window_days") or 7),
+                        )
+                        st.caption("Treatment and control outcomes must use one currency and this declared attribution window.")
+                    with approval_step:
+                        st.info("This saves a reviewable campaign brief. It does not send messages, issue discounts, or export customer contact details.")
+                        consent_basis = st.selectbox(
+                            "Activation readiness", ["Consent not connected — simulation only", "Merchant will verify consent before activation"],
+                        )
+                    save_draft = st.form_submit_button("Save campaign brief for review", use_container_width=True)
+                if save_draft:
                     task = create_task(
                         {**draft, "title": title, "audience": audience, "channel": channel,
-                         "budget": budget, "duration_days": duration, "market": market,
-                         "locale": locale, "attribution_window_days": attribution_window,
+                         "budget": budget, "duration_days": duration, "market": market_value,
+                         "locale": locale_value, "attribution_window_days": attribution_window,
                          "timezone": str(draft.get("timezone", "UTC")),
-                         "consent_basis": "pending_merchant_confirmation"},
+                         "consent_basis": consent_basis},
                         question=st.session_state.get("last_question", ""),
                         source_diagnosis=st.session_state.get("last_diagnosis", {}),
                         owner=current_username,
                     )
-                    st.success(f"任务 {task['task_id']} 已保存为草稿")
+                    st.success(f"Campaign brief {task['task_id']} saved for review.")
                     st.rerun()
         else:
-            st.info("完成一次 Agent 诊断后，这里会出现可编辑的运营任务草稿。")
+            st.info("Review an opportunity or ask the Agent to generate a campaign brief.")
 
         tasks = load_tasks(owner=task_owner)
         if tasks:
             st.divider()
-            st.caption(f"已保存任务：{len(tasks)} 条")
+            st.caption(f"{len(tasks)} saved campaign briefs")
             completed_results = [
                 task.get("result", {}) for task in tasks
                 if task.get("status") == "completed" and isinstance(task.get("result"), dict)
             ]
             if completed_results:
-                st.markdown("##### 📈 运营实验累计效果")
+                st.markdown("##### Campaign learning")
                 result_currency = _single_result_currency(completed_results)
                 if result_currency:
                     total_incremental_revenue = sum(float(result.get("incremental_revenue", 0) or 0) for result in completed_results)
                     total_cost = sum(float(result.get("cost", 0) or 0) for result in completed_results)
                     portfolio_roi = ((total_incremental_revenue - total_cost) / total_cost) if total_cost else None
                     metric_a, metric_b, metric_c, metric_d = st.columns(4)
-                    metric_a.metric("已完成实验", f"{len(completed_results)} 个")
-                    metric_b.metric("累计增量收入", _format_money(total_incremental_revenue, result_currency))
-                    metric_c.metric("累计活动成本", _format_money(total_cost, result_currency))
-                    metric_d.metric("组合 ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "待录入成本")
+                    metric_a.metric("Completed evaluations", f"{len(completed_results)}")
+                    metric_b.metric("Estimated incremental revenue", _format_money(total_incremental_revenue, result_currency))
+                    metric_c.metric("Campaign cost", _format_money(total_cost, result_currency))
+                    metric_d.metric("Portfolio ROI", f"{portfolio_roi:.0%}" if portfolio_roi is not None else "Cost missing")
                 else:
-                    st.info("已完成任务包含多币种结果；系统不会跨币种汇总收入、成本或 ROI。")
+                    st.info("Completed campaigns use multiple currencies. Revenue, cost, and ROI are not aggregated across currencies.")
             for task in tasks[:10]:
                 task_id = task.get("task_id", "?")
                 status = task.get("status", "draft")
-                st.markdown(f"**[{status}] {task.get('title', '未命名任务')}** · `{task_id}`")
+                mode = (task.get("result") or {}).get("measurement_mode") or ((task.get("execution") or {}).get("mode")) or "review"
+                st.markdown(f"**[{status.upper()} · {str(mode).upper()}] {task.get('title', 'Untitled campaign')}** · `{task_id}`")
                 st.caption(
-                    f"人群：{task.get('audience', '未设置')} · 渠道：{task.get('channel', '未设置')} · "
-                    f"市场：{task.get('market', '待确认')} · 语言：{task.get('locale', '待确认')} · "
-                    f"预算：{task.get('budget', 0)}"
+                    f"Audience: {task.get('audience', 'Not set')} · Channel: {task.get('channel', 'Not set')} · "
+                    f"Market: {task.get('market', 'To confirm')} · Locale: {task.get('locale', 'To confirm')} · "
+                    f"Budget: {task.get('budget', 0)}"
                 )
                 col_confirm, col_reject = st.columns(2)
                 with col_confirm:
-                    if status == "draft" and st.button("确认任务", key=f"confirm_{task_id}", use_container_width=True):
+                    if status == "draft" and st.button("Approve campaign brief", key=f"confirm_{task_id}", use_container_width=True):
                         update_task(task_id, {"status": "confirmed"}, owner=task_owner)
                         st.rerun()
                 with col_reject:
-                    if status == "draft" and st.button("驳回任务", key=f"reject_{task_id}", use_container_width=True):
+                    if status == "draft" and st.button("Decline brief", key=f"reject_{task_id}", use_container_width=True):
                         update_task(task_id, {"status": "rejected"}, owner=task_owner)
                         st.rerun()
                 if status == "confirmed":
                     execution = task.get("execution") if isinstance(task.get("execution"), dict) else None
                     if not execution:
                         with st.form(f"launch_form_{task_id}"):
-                            st.caption("仅创建可审计模拟活动：不会发送真实邮件、短信或优惠券。真实触达需要已验证的营销同意状态与商家批准。")
+                            st.caption("Simulation only: no email, SMS, WhatsApp, coupon, or customer export is created. Live activation requires verified consent and merchant approval.")
                             audience_size = st.number_input(
-                                "模拟触达人数", min_value=1, value=200, step=50, key=f"audience_size_{task_id}"
+                                "Simulated eligible recipients", min_value=1, value=200, step=50, key=f"audience_size_{task_id}"
                             )
                             exec_left, exec_right, exec_third = st.columns(3)
                             with exec_left:
-                                execution_market = st.text_input("执行市场", value=str(task.get("market", "US")), key=f"market_{task_id}")
+                                execution_market = st.text_input("Execution market", value=str(task.get("market", "US")), key=f"market_{task_id}")
                             with exec_right:
-                                execution_timezone = st.text_input("执行时区", value=str(task.get("timezone", "UTC")), key=f"timezone_{task_id}")
+                                execution_timezone = st.text_input("Execution timezone", value=str(task.get("timezone", "UTC")), key=f"timezone_{task_id}")
                             with exec_third:
-                                execution_locale = st.text_input("内容语言", value=str(task.get("locale", "en-US")), key=f"locale_{task_id}")
+                                execution_locale = st.text_input("Content locale", value=str(task.get("locale", "en-US")), key=f"locale_{task_id}")
                             attribution_window = st.number_input(
-                                "归因窗口（天）", min_value=1, max_value=90,
+                                "Attribution window (days)", min_value=1, max_value=90,
                                 value=int(task.get("attribution_window_days") or 7), key=f"window_{task_id}"
                             )
-                            launch_submitted = st.form_submit_button("🚀 创建模拟营销活动", use_container_width=True)
+                            launch_submitted = st.form_submit_button("Create simulation", use_container_width=True)
                         if launch_submitted:
                             try:
                                 launch_simulated_campaign(
                                     task_id, int(audience_size), market=execution_market, timezone_name=execution_timezone,
                                     locale=execution_locale, attribution_window_days=int(attribution_window), owner=task_owner,
                                 )
-                                st.success("模拟营销活动已创建，可在下方回填 A/B 实验结果。")
+                                st.success("Simulation created. Add treatment/control outcomes below when ready.")
                                 st.rerun()
                             except ValueError as exc:
                                 st.error(str(exc))
@@ -1224,24 +1243,25 @@ with tab_chat:
                     if not execution:
                         continue
                     with st.form(f"result_form_{task_id}"):
-                        st.caption("回填实验结果（实验组 / 对照组）")
+                        st.markdown("##### Learning input")
+                        st.caption("Simulation result only. Enter treatment/control outcomes in one currency; the declared campaign attribution window is preserved.")
                         c1, c2, c3 = st.columns(3)
                         with c1:
-                            treatment_users = st.number_input("实验组人数", min_value=1, value=100, key=f"tu_{task_id}")
-                            treatment_orders = st.number_input("实验组订单", min_value=0, value=10, key=f"to_{task_id}")
-                            treatment_revenue = st.number_input("实验组收入", min_value=0.0, value=1000.0, step=100.0, key=f"tr_{task_id}")
+                            treatment_users = st.number_input("Treatment recipients", min_value=1, value=100, key=f"tu_{task_id}")
+                            treatment_orders = st.number_input("Treatment orders", min_value=0, value=10, key=f"to_{task_id}")
+                            treatment_revenue = st.number_input("Treatment revenue", min_value=0.0, value=1000.0, step=100.0, key=f"tr_{task_id}")
                         with c2:
-                            control_users = st.number_input("对照组人数", min_value=1, value=100, key=f"cu_{task_id}")
-                            control_orders = st.number_input("对照组订单", min_value=0, value=8, key=f"co_{task_id}")
-                            control_revenue = st.number_input("对照组收入", min_value=0.0, value=800.0, step=100.0, key=f"cr_{task_id}")
+                            control_users = st.number_input("Control customers", min_value=1, value=100, key=f"cu_{task_id}")
+                            control_orders = st.number_input("Control orders", min_value=0, value=8, key=f"co_{task_id}")
+                            control_revenue = st.number_input("Control revenue", min_value=0.0, value=800.0, step=100.0, key=f"cr_{task_id}")
                         with c3:
-                            cost = st.number_input("活动成本", min_value=0.0, value=float(task.get("budget") or 0), step=100.0, key=f"cost_{task_id}")
+                            cost = st.number_input("Campaign cost", min_value=0.0, value=float(task.get("budget") or 0), step=100.0, key=f"cost_{task_id}")
                             result_currency = st.text_input(
-                                "结果币种", value=(connected_data_health["currencies"][0] if connected_data_health and len(connected_data_health["currencies"]) == 1 else "USD"),
-                                key=f"currency_{task_id}", help="实验与对照收入、成本必须使用同一币种"
+                                "Result currency", value=(connected_data_health["currencies"][0] if connected_data_health and len(connected_data_health["currencies"]) == 1 else "USD"),
+                                key=f"currency_{task_id}", help="Treatment, control, and cost must use the same currency."
                             )
-                        revenue_net_of_refunds = st.checkbox("收入已扣除退款 / 退货", value=False, key=f"refunds_{task_id}")
-                        submitted = st.form_submit_button("提交结果并完成任务", use_container_width=True)
+                        revenue_net_of_refunds = st.checkbox("Revenue is net of refunds / returns", value=False, key=f"refunds_{task_id}")
+                        submitted = st.form_submit_button("Save simulated result", use_container_width=True)
                     if submitted:
                         try:
                             result = evaluate_experiment(
@@ -1253,28 +1273,31 @@ with tab_chat:
                                 revenue_net_of_refunds=revenue_net_of_refunds,
                             )
                             complete_task(task_id, result, owner=task_owner)
-                            st.success(f"任务 {task_id} 已完成，效果结果已保存")
+                            st.success(f"Simulation result saved for campaign {task_id}.")
                             st.rerun()
                         except ValueError as exc:
                             st.error(str(exc))
                 if status == "completed" and task.get("result"):
                     result = task["result"]
                     roi = result.get("roi")
-                    roi_text = f"{roi:.1%}" if roi is not None else "未计算（成本为 0）"
+                    roi_text = f"{roi:.1%}" if roi is not None else "No cost entered"
                     verdict_title, verdict_detail = _experiment_verdict(result)
                     with st.container(border=True):
-                        st.markdown("##### 📊 实验复盘结果")
+                        mode = str(result.get("measurement_mode", "simulation")).upper()
+                        st.markdown(f"##### Learning result · {mode}")
+                        if result.get("measurement_mode", "simulation") == "simulation":
+                            st.warning("SIMULATION — This is a planning result, not verified merchant revenue. It is excluded from validated revenue on Overview.")
                         metric_a, metric_b, metric_c, metric_d = st.columns(4)
-                        metric_a.metric("实验组转化率", f"{result.get('treatment_conversion', 0):.2%}")
-                        metric_b.metric("转化提升", f"{result.get('conversion_uplift_pp', 0):.2f} 个百分点")
-                        metric_c.metric("增量收入", _format_money(result.get("incremental_revenue"), result.get("currency", "USD")))
+                        metric_a.metric("Treatment conversion", f"{result.get('treatment_conversion', 0):.2%}")
+                        metric_b.metric("Conversion lift", f"{result.get('conversion_uplift_pp', 0):.2f} pp")
+                        metric_c.metric("Estimated incremental revenue", _format_money(result.get("incremental_revenue"), result.get("currency", "USD")))
                         metric_d.metric("ROI", roi_text)
                         st.caption(
-                            f"对照组转化率：{result.get('control_conversion', 0):.2%} · "
-                            f"增量订单：{float(result.get('incremental_orders', 0) or 0):,.1f} · "
-                            f"活动成本：{_format_money(result.get('cost'), result.get('currency', 'USD'))} · "
-                            f"归因窗口：{result.get('attribution_window_days', 7)} 天 · "
-                            f"结果类型：{result.get('measurement_mode', 'simulation')}"
+                            f"Control conversion: {result.get('control_conversion', 0):.2%} · "
+                            f"Incremental orders: {float(result.get('incremental_orders', 0) or 0):,.1f} · "
+                            f"Campaign cost: {_format_money(result.get('cost'), result.get('currency', 'USD'))} · "
+                            f"Attribution: {result.get('attribution_window_days', 7)} days · "
+                            f"Refund-adjusted: {'Yes' if result.get('revenue_net_of_refunds') else 'No'}"
                         )
                         st.info(f"**{verdict_title}**：{verdict_detail}")
 
