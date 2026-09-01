@@ -1,17 +1,26 @@
 # Production deployment
 
-This frontend is deployable as a standalone Next.js application. The recommended production path is Vercel + GitHub.
+The RevenueOps web app is a static Next.js export hosted on Cloudflare Pages. This creates a public `*.pages.dev` HTTPS address that can be opened from any device without the developer's computer running.
 
-1. Push the repository to GitHub.
-2. In Vercel, import `BobGreen147295/olist_ecommerce_analysis`.
-3. Set **Root Directory** to `web`.
-4. Leave the detected Next.js build settings unchanged, then deploy.
-5. In Vercel Project Settings, add production environment variables from `.env.example` only when the Agent API is available.
+## Deploy through GitHub
 
-Vercel will create a public HTTPS URL and automatically redeploy the `main` branch on every GitHub push. Validate the public deployment at `/api/health`.
+1. Sign in to [Cloudflare](https://dash.cloudflare.com/) with email verification.
+2. Open **Workers & Pages** → **Create application** → **Pages** → **Connect to Git**.
+3. Authorize the GitHub account and choose `BobGreen147295/olist_ecommerce_analysis`.
+4. Set project name to `olist-revenueops` and **Root directory** to `web`.
+5. Use these build settings:
 
-## Security boundary
+| Setting | Value |
+| --- | --- |
+| Production branch | `main` |
+| Framework preset | `Next.js (Static HTML Export)` |
+| Build command | `npx next build` |
+| Build output directory | `out` |
 
-- Never add Supabase `DATABASE_URL`, OpenAI keys, or service-role keys as `NEXT_PUBLIC_*` variables.
-- Add secrets in Vercel Project Settings, not in Git.
-- The browser talks only to a server-side Agent API. The API owns authentication, tenant isolation, audit events, and database access.
+6. Click **Save and Deploy**. Cloudflare will create `https://olist-revenueops.pages.dev` (or a close available name).
+
+Every push to `main` will automatically redeploy the production site. Validate it at `/health.json`.
+
+## Architecture boundary
+
+The Web frontend is intentionally static. The Python Agent, PostgreSQL/Supabase access, authentication, and provider secrets belong in a separately deployed server-side API. The browser will call that API over HTTPS; it will never hold database connection strings or service keys.
