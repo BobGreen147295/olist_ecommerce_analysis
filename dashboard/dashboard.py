@@ -44,6 +44,7 @@ from src.agent.task_store import (
     check_database_connection,
     complete_task,
     create_task,
+    launch_simulated_campaign,
     load_tasks,
     storage_mode,
     update_task,
@@ -776,10 +777,10 @@ with tab_chat:
     _show_evidence_cards(st.session_state.get("last_diagnosis", {}))
 
     # ── 运营任务：编辑、保存、确认/驳回 ─────────────────
-    with st.expander("📝 运营任务中心", expanded=bool(st.session_state.get("last_action_drafts"))):
+    with st.expander("🧩 运营行动中心", expanded=bool(st.session_state.get("last_action_drafts"))):
         drafts = st.session_state.get("last_action_drafts", [])
         if drafts:
-            st.caption("以下任务来自最近一次 Agent 诊断，保存后仍需人工确认，不会自动触达客户。")
+            st.caption("Agent 只生成草稿；必须经人工确认后，才能创建模拟营销活动。系统不会自动触达真实客户。")
             for idx, draft in enumerate(drafts):
                 key_prefix = f"draft_{idx}"
                 title = st.text_input("任务标题", value=str(draft.get("title", "运营策略")), key=f"{key_prefix}_title")
@@ -836,6 +837,29 @@ with tab_chat:
                         update_task(task_id, {"status": "rejected"}, owner=task_owner)
                         st.rerun()
                 if status == "confirmed":
+                    execution = task.get("execution") if isinstance(task.get("execution"), dict) else None
+                    if not execution:
+                        with st.form(f"launch_form_{task_id}"):
+                            st.caption("模拟执行不会发送真实邮件、短信或优惠券，只创建可审计的活动记录。")
+                            audience_size = st.number_input(
+                                "模拟触达人数", min_value=1, value=200, step=50, key=f"audience_size_{task_id}"
+                            )
+                            launch_submitted = st.form_submit_button("🚀 创建模拟营销活动", use_container_width=True)
+                        if launch_submitted:
+                            try:
+                                launch_simulated_campaign(task_id, int(audience_size), owner=task_owner)
+                                st.success("模拟营销活动已创建，可在下方回填 A/B 实验结果。")
+                                st.rerun()
+                            except ValueError as exc:
+                                st.error(str(exc))
+                    else:
+                        st.success(
+                            f"[SIMULATION] 活动 `{execution.get('campaign_id')}` 已启动 · "
+                            f"{execution.get('channel', '待确认')} · 模拟触达 {execution.get('audience_size', 0):,} 人 · "
+                            f"周期 {execution.get('duration_days', 0)} 天"
+                        )
+                    if not execution:
+                        continue
                     with st.form(f"result_form_{task_id}"):
                         st.caption("回填实验结果（实验组 / 对照组）")
                         c1, c2, c3 = st.columns(3)

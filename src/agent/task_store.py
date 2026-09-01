@@ -270,3 +270,42 @@ def complete_task(
             save_tasks(tasks, path)
         return task
     return None
+
+
+def launch_simulated_campaign(
+    task_id: str,
+    audience_size: int,
+    path: Optional[Path] = None,
+    owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """创建可审计的模拟营销活动，不调用外部触达服务。"""
+    if audience_size <= 0:
+        raise ValueError("模拟触达人数必须大于 0")
+    tasks = load_tasks(path)
+    for task in tasks:
+        if task.get("task_id") != task_id:
+            continue
+        if owner is not None and task.get("owner") != owner:
+            continue
+        if task.get("status") != "confirmed":
+            raise ValueError("只有 confirmed 状态的任务可以创建模拟活动")
+        if task.get("execution"):
+            raise ValueError("该任务已经创建过模拟活动")
+        now = _now()
+        task["execution"] = {
+            "campaign_id": f"sim_{uuid.uuid4().hex[:10]}",
+            "mode": "simulation",
+            "status": "launched",
+            "launched_at": now,
+            "audience_size": int(audience_size),
+            "channel": task.get("channel", "待确认"),
+            "budget": float(task.get("budget") or 0),
+            "duration_days": int(task.get("duration_days") or 7),
+        }
+        task["updated_at"] = now
+        if path is None and _use_database():
+            _db_save_task(task)
+        else:
+            save_tasks(tasks, path)
+        return task
+    return None
