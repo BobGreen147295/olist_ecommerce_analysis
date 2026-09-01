@@ -40,7 +40,13 @@ from src.agent.feedback_store import (
 )
 from src.agent.regression_eval import run_tool_routing_regression
 from src.agent.alerting import generate_operational_alerts
-from src.agent.commerce_store import get_active_data_source, import_order_csv, list_data_sources, preview_order_csv
+from src.agent.commerce_store import (
+    get_active_data_source,
+    get_connected_sales_trend,
+    import_order_csv,
+    list_data_sources,
+    preview_order_csv,
+)
 from src.agent.task_store import (
     check_database_connection,
     complete_task,
@@ -347,6 +353,26 @@ sales_trends = data["sales_trends"]
 population_data = data["population_data"]
 region_analysis = data["region_analysis"]
 
+# 外部订单源接入后，销售趋势与预警优先使用该源；未接入时保持 Olist 演示数据。
+active_connected_source = None
+if _get_setting("DATABASE_URL"):
+    try:
+        connected_trend = get_connected_sales_trend(36)
+        if connected_trend and connected_trend.get("success"):
+            connected_frame = pd.DataFrame(connected_trend["data"])
+            connected_frame["period"] = pd.to_datetime(connected_frame["period"], format="%Y-%m")
+            sales_trends = pd.DataFrame({
+                "customer_state": "CONNECTED",
+                "year": connected_frame["period"].dt.year,
+                "month": connected_frame["period"].dt.month,
+                "order_count": connected_frame["total_orders"],
+                "total_sales": connected_frame["total_sales"],
+                "period": connected_frame["period"].dt.to_period("M").astype(str),
+            })
+            active_connected_source = connected_trend.get("source")
+    except RuntimeError:
+        pass
+
 # ═══════════════════════════════════════════════════════
 # Tab 布局
 # ═══════════════════════════════════════════════════════
@@ -622,7 +648,13 @@ with tab_connections:
 with tab_alerts:
     st.subheader("🚨 主动经营预警中心")
     st.caption("系统基于真实数据规则识别异常与机会；预警只生成待诊断事项，不会自动触达客户或调整预算。")
-    alerts, data_notes = generate_operational_alerts(sales_trends, rfm_analysis, region_analysis)
+    if active_connected_source:
+        st.info(f"当前预警销售数据源：**{active_connected_source}**。客户与地区预警将在接入对应数据后启用。")
+    alerts, data_notes = generate_operational_alerts(
+        sales_trends,
+        pd.DataFrame() if active_connected_source else rfm_analysis,
+        pd.DataFrame() if active_connected_source else region_analysis,
+    )
     if data_notes:
         with st.expander("🛡️ 数据完整性保护", expanded=False):
             for note in data_notes:
