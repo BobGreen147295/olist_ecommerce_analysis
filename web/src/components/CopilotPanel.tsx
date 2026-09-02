@@ -2,13 +2,42 @@
 
 import { FormEvent, useState } from "react";
 
-type Message = { role: "assistant" | "user"; content: string };
+type Message = { role: "assistant" | "user"; content: string; source?: "agent" | "demo" };
+type AnswerSection = { title?: string; body: string };
 
 const welcome: Message = {
   role: "assistant",
   content: "我是 RevenueOps AI Co-pilot。我可以解释当前机会、活动实验和数据缺口；所有建议均需人工确认，不会自动触达客户。",
 };
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
+
+function formatAgentText(value: string) {
+  return value
+    .replace(/[“”"]/g, "")
+    .replace(/query_[a-z_]+\s*已完成\s*[·:：-]?\s*/gi, "")
+    .replace(/来源[：:]\s*query_[a-z_]+\s*[·:：-]?\s*/gi, "")
+    .trim();
+}
+
+function agentSections(value: string): AnswerSection[] {
+  const sections = value.replace(/\r/g, "").split(/(?=##\s+)/).filter(Boolean).map((section) => {
+    const heading = section.match(/^##\s*([^\n]+)/);
+    return heading
+      ? { title: formatAgentText(heading[1]), body: formatAgentText(section.slice(heading[0].length)) }
+      : { body: formatAgentText(section) };
+  }).filter((section) => section.title || section.body);
+  return sections.length ? sections : [{ body: formatAgentText(value) }];
+}
+
+function AgentAnswer({ content }: { content: string }) {
+  return <div className="agent-answer">
+    {agentSections(content).map((section, index) => <section key={`${section.title ?? "answer"}-${index}`}>
+      {section.title && <h3>{section.title}</h3>}
+      {section.body && <p>{section.body}</p>}
+    </section>)}
+    <small>基于当前示例数据生成；执行前请人工复核。</small>
+  </div>;
+}
 
 function replyFor(question: string) {
   const normalized = question.toLowerCase();
@@ -46,7 +75,7 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
       const payload = await response.json();
       if (!response.ok || !payload.answer) throw new Error(payload.error || "Agent 请求失败");
       setAgentMode("agent");
-      setMessages((current) => [...current, { role: "assistant", content: payload.answer }]);
+      setMessages((current) => [...current, { role: "assistant", content: payload.answer, source: "agent" }]);
     } catch {
       setAgentMode("unavailable");
       setMessages((current) => [...current, { role: "assistant", content: "实时 Agent 服务暂不可用。本次展示示例推理，不会把它当作真实商家结论。\n\n" + replyFor(question) }]);
@@ -57,7 +86,7 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
   return <><button className={`copilot-scrim ${open ? "copilot-visible" : ""}`} onClick={onClose} aria-label="关闭 AI 对话" /><aside className={`copilot-panel ${open ? "copilot-open" : ""}`} aria-label="AI Co-pilot">
     <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>运营智能问答</h2><span><i /> {agentMode === "agent" ? "服务端 Agent · 人工可控" : agentMode === "demo" ? "示例推理 · 人工可控" : "服务暂不可用 · 已降级"}</span></div><button onClick={onClose} aria-label="关闭">×</button></header>
     <div className="copilot-context">当前上下文：Northstar Commerce · 示例工作区<br />数据范围：订单历史、客户分层、模拟实验结果</div>
-    <div className="copilot-messages">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={`copilot-message ${message.role}`}><span>{message.role === "assistant" ? "AI" : "你"}</span><p>{message.content}</p></div>)}</div>
+    <div className="copilot-messages">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={`copilot-message ${message.role}`}><span>{message.role === "assistant" ? "AI" : "你"}</span>{message.source === "agent" ? <AgentAnswer content={message.content} /> : <p>{message.content}</p>}</div>)}</div>
     <div className="copilot-prompts"><button onClick={() => setDraft("为什么要先做流失客户召回？")}>为什么先做流失召回？</button><button onClick={() => setDraft("当前 ROI 可以相信吗？")}>当前 ROI 可以相信吗？</button><button onClick={() => setDraft("还缺哪些数据连接？")}>还缺哪些数据？</button></div>
     <form className="copilot-compose" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="问一个运营问题…" rows={2} /><button type="submit" disabled={isLoading}>{isLoading ? "分析中…" : "发送 ↑"}</button></form>
     <p className="copilot-disclaimer">{agentMode === "agent" ? "回答由服务端 Agent 生成，仍需人工复核后执行。" : "回答基于示例数据，不构成真实经营结论或自动执行指令。"}</p>
