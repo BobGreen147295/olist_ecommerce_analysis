@@ -7,6 +7,7 @@ service is intentionally separate from the static Cloudflare Pages frontend.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from flask import Flask, jsonify, request
@@ -44,11 +45,46 @@ def _safe_history(value: Any) -> list[dict[str, str]]:
     return history
 
 
+def _brief(value: Any, limit: int = 180) -> str:
+    """将 Agent 字段收束为面向商家的自然语言短句。"""
+    text = re.sub(r"[*#`]+", "", str(value or ""))
+    text = " ".join(text.split())
+    return text[:limit].rstrip("，；、 ")
+
+
 def _format_agent_answer(result: dict[str, Any]) -> str:
-    parts = [part.strip() for part in (result.get("analysis", ""), result.get("recommendation", "")) if part]
-    if parts:
-        return "\n\n".join(parts)
-    return "当前未能生成结论。请检查数据连接或稍后重试。"
+    """把 Agent 的结构化工作底稿转成聊天答复，不暴露工具名或 Markdown。"""
+    diagnosis = result.get("diagnosis") if isinstance(result.get("diagnosis"), dict) else {}
+    findings = diagnosis.get("findings") if isinstance(diagnosis.get("findings"), list) else []
+    action_drafts = result.get("action_drafts") if isinstance(result.get("action_drafts"), list) else []
+
+    draft = next((item for item in action_drafts if isinstance(item, dict)), {})
+    title = _brief(draft.get("title"))
+    if not title or title == "基于当前诊断制定小规模验证任务":
+        opening = "我建议先做一轮小规模验证，而不是马上扩大动作。"
+    else:
+        opening = f"我建议你优先做“{title}”。"
+
+    evidence: list[str] = []
+    for finding in findings[:2]:
+        if not isinstance(finding, dict):
+            continue
+        items = finding.get("evidence", [])
+        if not isinstance(items, list):
+            items = [items]
+        item = _brief(items[0] if items else finding.get("title"))
+        if item and "query_" not in item.lower():
+            evidence.append(item)
+    basis = f"目前的数据依据是：{'；'.join(evidence)}。" if evidence else "目前的数据还不足以支持更激进的判断。"
+
+    actions = draft.get("actions") if isinstance(draft.get("actions"), list) else []
+    next_steps = [_brief(item, 90) for item in actions[:2] if _brief(item, 90)]
+    if next_steps:
+        action_text = f"下一步先{'，再'.join(next_steps)}。"
+    else:
+        action_text = "下一步先确认目标人群和衡量指标，再决定是否启动实验。"
+
+    return f"{opening}\n\n{basis}\n\n{action_text} 这是一项需要人工确认的建议，效果应通过小范围 A/B 测试验证。"
 
 
 def create_app() -> Flask:
