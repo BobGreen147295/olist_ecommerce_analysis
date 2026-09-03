@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
+import hmac
 from typing import Any
+from urllib.parse import urlencode
 
-from flask import Flask, jsonify, request
+import requests
+from flask import Flask, jsonify, redirect, request
 
 
 MAX_MESSAGE_LENGTH = 1_500
@@ -95,8 +99,12 @@ def _shopify_readiness() -> dict[str, Any]:
         missing.append("SHOPIFY_CLIENT_ID")
     if not os.environ.get("SHOPIFY_CLIENT_SECRET"):
         missing.append("SHOPIFY_CLIENT_SECRET")
-    if not os.environ.get("SHOPIFY_APP_URL"):
-        missing.append("SHOPIFY_APP_URL")
+    if not os.environ.get("PUBLIC_API_BASE_URL"):
+        missing.append("PUBLIC_API_BASE_URL")
+    if not os.environ.get("PUBLIC_WEB_URL"):
+        missing.append("PUBLIC_WEB_URL")
+    if not os.environ.get("CONNECTION_TOKEN_ENCRYPTION_KEY"):
+        missing.append("CONNECTION_TOKEN_ENCRYPTION_KEY")
     return {
         "provider": "shopify",
         "state": "ready_to_authorize" if not missing else "configuration_required",
@@ -104,6 +112,26 @@ def _shopify_readiness() -> dict[str, Any]:
         "missing_configuration": missing,
         "message": "可由商家开始 OAuth 授权" if not missing else "尚未配置 Shopify 应用凭据，不能发起授权。",
     }
+
+
+def _require_session() -> dict[str, str]:
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        raise ValueError("请先登录后再连接店铺")
+    from src.agent.auth_session_store import get_session
+    return get_session(header.removeprefix("Bearer ").strip())
+
+
+def _shopify_callback_url() -> str:
+    return f"{os.environ.get('PUBLIC_API_BASE_URL', '').rstrip('/')}/v1/integrations/shopify/callback"
+
+
+def _shopify_hmac_is_valid(arguments: dict[str, str]) -> bool:
+    received = arguments.get("hmac", "")
+    secret = os.environ.get("SHOPIFY_CLIENT_SECRET", "").encode("utf-8")
+    message = urlencode(sorted((key, value) for key, value in arguments.items() if key not in {"hmac", "signature"}))
+    expected = hmac.new(secret, message.encode("utf-8"), hashlib.sha256).hexdigest()
+    return bool(secret and received and hmac.compare_digest(received, expected))
 
 
 def create_app() -> Flask:
@@ -126,6 +154,122 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         return jsonify(_shopify_readiness())
+
+    @app.route("/v1/auth/login", methods=["POST", "OPTIONS"])
+    def login() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        payload = request.get_json(silent=True) or {}
+        username, password = payload.get("username", ""), payload.get("password", "")
+        if not isinstance(username, str) or not isinstance(password, str):
+            return jsonify({"error": "用户名或密码格式无效"}), 400
+        try:
+            from src.agent.account_store import authenticate_user
+            from src.agent.auth_session_store import issue_session
+            user = authenticate_user(username.strip(), password)
+            if not user:
+                return jsonify({"error": "用户名或密码不正确"}), 401
+            return jsonify({"access_token": issue_session(user["username"], user["role"]), "expires_in": 1_800})
+        except RuntimeError:
+            app.logger.exception("Login service configuration failed")
+            return jsonify({"error": "登录服务尚未配置完成"}), 503
+
+    @app.route("/v1/auth/register", methods=["POST", "OPTIONS"])
+    def register() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        payload = request.get_json(silent=True) or {}
+        username = payload.get("username", "")
+        password = payload.get("password", "")
+        registration_code = payload.get("registration_code", "")
+        if not all(isinstance(value, str) for value in (username, password, registration_code)):
+            return jsonify({"error": "注册信息格式无效"}), 400
+        try:
+            from src.agent.account_store import create_user
+            from src.agent.auth_session_store import issue_session
+            user = create_user(username.strip(), password, registration_code, os.environ.get("REGISTRATION_CODE", ""))
+            return jsonify({"access_token": issue_session(user["username"], user["role"]), "expires_in": 1_800}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            app.logger.exception("Registration service configuration failed")
+            return jsonify({"error": "注册服务尚未配置完成"}), 503
+
+    @app.route("/v1/auth/me", methods=["GET", "OPTIONS"])
+    def current_user() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            return jsonify({"username": session["username"], "role": session["role"]})
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+
+    @app.route("/v1/auth/logout", methods=["POST", "OPTIONS"])
+    def logout() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            from src.agent.auth_session_store import revoke_session
+            revoke_session(session["session_id"])
+            return "", 204
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+
+    @app.route("/v1/integrations/shopify/authorize", methods=["POST", "OPTIONS"])
+    def authorize_shopify() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        readiness = _shopify_readiness()
+        if readiness["state"] != "ready_to_authorize":
+            return jsonify({"error": "Shopify 授权服务尚未配置完成"}), 503
+        try:
+            session = _require_session()
+            payload = request.get_json(silent=True) or {}
+            shop_domain = payload.get("shop_domain", "")
+            if not isinstance(shop_domain, str):
+                raise ValueError("店铺域名格式无效")
+            from src.agent.merchant_connection_store import issue_authorization_state
+            state = issue_authorization_state(session["username"], shop_domain)
+            parameters = {
+                "client_id": os.environ["SHOPIFY_CLIENT_ID"],
+                "scope": ",".join(SHOPIFY_SCOPES),
+                "redirect_uri": _shopify_callback_url(),
+                "state": state,
+            }
+            return jsonify({"authorization_url": f"https://{shop_domain.strip().lower()}/admin/oauth/authorize?{urlencode(parameters)}"})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            app.logger.exception("Shopify authorization initialization failed")
+            return jsonify({"error": "授权服务暂不可用"}), 503
+
+    @app.route("/v1/integrations/shopify/callback", methods=["GET"])
+    def shopify_callback() -> Any:
+        arguments = request.args.to_dict(flat=True)
+        if not _shopify_hmac_is_valid(arguments):
+            return "Shopify callback verification failed", 400
+        try:
+            from src.agent.merchant_connection_store import consume_authorization_state, save_shopify_connection
+            context = consume_authorization_state(arguments.get("state", ""))
+            if context["provider"] != "shopify" or context["shop_domain"] != arguments.get("shop", "").lower():
+                raise ValueError("授权店铺与发起店铺不一致")
+            response = requests.post(
+                f"https://{context['shop_domain']}/admin/oauth/access_token",
+                data={"client_id": os.environ["SHOPIFY_CLIENT_ID"], "client_secret": os.environ["SHOPIFY_CLIENT_SECRET"], "code": arguments.get("code", "")},
+                timeout=15,
+            )
+            response.raise_for_status()
+            token_payload = response.json()
+            access_token, scopes = token_payload.get("access_token"), token_payload.get("scope", "")
+            if not isinstance(access_token, str) or not access_token:
+                raise ValueError("Shopify 未返回有效访问令牌")
+            save_shopify_connection(context["workspace_id"], context["shop_domain"], access_token, scopes.split(","))
+            return redirect(f"{os.environ['PUBLIC_WEB_URL'].rstrip('/')}/data?shopify=connected", code=302)
+        except (ValueError, requests.RequestException, RuntimeError):
+            app.logger.exception("Shopify authorization callback failed")
+            return redirect(f"{os.environ.get('PUBLIC_WEB_URL', '').rstrip('/')}/data?shopify=failed", code=302)
 
     @app.route("/v1/chat", methods=["POST", "OPTIONS"])
     def chat() -> Any:

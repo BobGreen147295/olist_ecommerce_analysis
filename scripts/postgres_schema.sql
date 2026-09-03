@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS merchant_connections (
 CREATE INDEX IF NOT EXISTS idx_merchant_connections_workspace
     ON merchant_connections (workspace_id, provider, status);
 
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    session_id VARCHAR(64) PRIMARY KEY,
+    username VARCHAR(32) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    expires_at VARCHAR(40) NOT NULL,
+    revoked_at VARCHAR(40),
+    created_at VARCHAR(40) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user
+    ON auth_sessions (username, expires_at);
+
 CREATE TABLE IF NOT EXISTS commerce_data_sources (
     source_id VARCHAR(32) PRIMARY KEY,
     display_name VARCHAR(120) NOT NULL,

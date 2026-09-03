@@ -160,7 +160,7 @@ def issue_authorization_state(owner_username: str, shop_domain: str) -> str:
         conn.close()
 
 
-def consume_authorization_state(owner_username: str, raw_state: str) -> dict[str, str]:
+def consume_authorization_state(raw_state: str) -> dict[str, str]:
     """验证并消耗 state，确保授权回调不能被重放或跨工作区使用。"""
     _ensure_schema()
     conn, placeholder = _connect_database()
@@ -168,8 +168,8 @@ def consume_authorization_state(owner_username: str, raw_state: str) -> dict[str
         cursor = conn.cursor()
         cursor.execute(
             f"SELECT state_id, workspace_id, provider, shop_domain, expires_at, consumed_at "
-            f"FROM oauth_authorization_states WHERE state_digest = {placeholder} AND owner_username = {placeholder}",
-            (_state_digest(raw_state), owner_username),
+            f"FROM oauth_authorization_states WHERE state_digest = {placeholder}",
+            (_state_digest(raw_state),),
         )
         row = cursor.fetchone()
         if not row or row[5] or row[4] <= _now():

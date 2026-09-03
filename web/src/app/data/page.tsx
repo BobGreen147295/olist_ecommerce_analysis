@@ -16,12 +16,46 @@ type ShopifyReadiness = { state: "configuration_required" | "ready_to_authorize"
 export default function DataPage() {
   const [shopifyReadiness, setShopifyReadiness] = useState<ShopifyReadiness | null>(null);
   const [selected, setSelected] = useState<typeof connectors[number] | null>(null);
-  useEffect(() => { if (!API_BASE_URL) return; fetch(`${API_BASE_URL}/v1/integrations/shopify/readiness`).then((response) => response.ok ? response.json() : null).then(setShopifyReadiness).catch(() => setShopifyReadiness(null)); }, []);
+  const [accessToken, setAccessToken] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [shopDomain, setShopDomain] = useState("");
+  const [registrationCode, setRegistrationCode] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [connectionError, setConnectionError] = useState("");
+  useEffect(() => {
+    setAccessToken(sessionStorage.getItem("revenueops_access_token") ?? "");
+    if (!API_BASE_URL) return;
+    fetch(`${API_BASE_URL}/v1/integrations/shopify/readiness`).then((response) => response.ok ? response.json() : null).then(setShopifyReadiness).catch(() => setShopifyReadiness(null));
+  }, []);
+  async function loginForConnection() {
+    setConnectionError("");
+    const response = await fetch(`${API_BASE_URL}/v1/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) { setConnectionError(data.error ?? "登录失败，请稍后重试。"); return; }
+    sessionStorage.setItem("revenueops_access_token", data.access_token);
+    setAccessToken(data.access_token); setPassword("");
+  }
+  async function registerForConnection() {
+    setConnectionError("");
+    const response = await fetch(`${API_BASE_URL}/v1/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, registration_code: registrationCode }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) { setConnectionError(data.error ?? "创建账号失败，请稍后重试。"); return; }
+    sessionStorage.setItem("revenueops_access_token", data.access_token);
+    setAccessToken(data.access_token); setPassword(""); setRegistrationCode("");
+  }
+  async function beginShopifyAuthorization() {
+    setConnectionError("");
+    const response = await fetch(`${API_BASE_URL}/v1/integrations/shopify/authorize`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ shop_domain: shopDomain }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.authorization_url) { setConnectionError(data.error ?? "无法发起 Shopify 授权。"); return; }
+    window.location.assign(data.authorization_url);
+  }
   const shopifyReady = shopifyReadiness?.state === "ready_to_authorize";
   return <main className="page-content"><PageHeading eyebrow="Data foundation" title="数据连接" description="跨境商家的真实价值来自可授权的数据连接，而不是替代商家保存或猜测业务数据。" action={<button className="button button-primary" onClick={() => document.getElementById("connectors")?.scrollIntoView({ behavior: "smooth" })}>申请连接器</button>} />
   <section className="notice-bar"><span className="notice-dot" />当前运行在示例工作区。连接真实店铺前，应由商家授权并明确数据范围、用途与保留周期。{shopifyReadiness && <strong> Shopify OAuth：{shopifyReady ? "可开始授权" : "等待应用配置"}</strong>}</section>
   <section className="data-layout"><article className="card"><div className="card-kicker"><span>CONNECTION STATUS</span><StatusBadge tone="neutral">DEMO WORKSPACE</StatusBadge></div><h2>数据域覆盖</h2><div className="data-table">{sources.map(([name, state, source, note]) => <div className="data-row" key={name}><div><strong>{name}</strong><small>{note}</small></div><StatusBadge tone={state === "已接入" ? "success" : "neutral"}>{state}</StatusBadge><span>{source}</span></div>)}</div></article><aside className="card data-contract"><p className="eyebrow">Principles</p><h3>连接原则</h3><ol><li>商家在自己的渠道平台授权。</li><li>最小化获取字段与访问范围。</li><li>明确数据更新频率和失效机制。</li><li>每一项 Agent 建议都可追溯数据来源。</li></ol></aside></section>
   <section className="card api-card"><div><p className="eyebrow">NEXT MILESTONE</p><h2>从样本到真实商家数据</h2><p>第一阶段优先接入 Shopify 订单、客户、退款与产品数据；第二阶段接入 Klaviyo 或 Braze 的事件回执；最后才接入广告成本做 ROI 归因。</p></div><span className="api-tag">API CONTRACT READY</span></section>
   <section className="card connector-card" id="connectors"><div className="card-heading"><div><p className="eyebrow">AUTHORIZED SOURCES</p><h2>选择一个真实数据源</h2><p>先查看授权范围与接入准备度；不会自动读取或发送任何数据。</p></div><StatusBadge tone="accent">商家可控</StatusBadge></div><div className="connector-grid">{connectors.map((connector) => <div className="connector-item" key={connector.name}><div className="connector-top"><span className="connector-logo">{connector.icon}</span><div><strong>{connector.name}</strong><small>{connector.type}</small></div></div><p>{connector.detail}</p><button className="connector-details-button" onClick={() => setSelected(connector)}>查看授权范围</button><button className="connector-button" onClick={() => setSelected(connector)}>{connector.name === "Shopify" ? (shopifyReady ? "准备开始授权" : "查看接入准备") : "规划中"}</button></div>)}</div><div className="connection-workflow"><p className="eyebrow">CONNECTION WORKFLOW</p><div className="workflow-steps"><span className="workflow-step-active">应用准备</span><span>商家 OAuth 授权</span><span>首次同步</span><span>数据可用</span></div></div></section>
-  {selected && <div className="connector-modal-backdrop" role="presentation" onClick={() => setSelected(null)}><section className="connector-modal" role="dialog" aria-modal="true" aria-labelledby="connector-dialog-title" onClick={(event) => event.stopPropagation()}><div className="connector-modal-header"><div><p className="eyebrow">CONNECTION REVIEW</p><h2 id="connector-dialog-title">{selected.name} 授权范围</h2></div><button className="connector-close" aria-label="关闭授权范围" onClick={() => setSelected(null)}>×</button></div><p className="connector-modal-intro">商家将在 {selected.name} 官方页面完成 OAuth 授权。RevenueOps 只请求必要的只读权限。</p><div className="scope-grid"><div><span>访问权限</span><strong>{selected.access}</strong></div><div><span>同步频率</span><strong>{selected.frequency}</strong></div><div className="scope-wide"><span>请求字段</span><strong>{selected.fields}</strong></div><div className="scope-wide"><span>使用目的</span><strong>{selected.purpose}</strong></div></div><div className="connector-modal-note">{selected.name === "Shopify" ? (shopifyReadiness?.message ?? "正在检查 Shopify 应用准备度。") : "该连接器尚未进入实施阶段。"}</div><button className="small-primary" onClick={() => setSelected(null)}>我了解了</button></section></div>}
+  {selected && <div className="connector-modal-backdrop" role="presentation" onClick={() => setSelected(null)}><section className="connector-modal" role="dialog" aria-modal="true" aria-labelledby="connector-dialog-title" onClick={(event) => event.stopPropagation()}><div className="connector-modal-header"><div><p className="eyebrow">CONNECTION REVIEW</p><h2 id="connector-dialog-title">{selected.name} 授权范围</h2></div><button className="connector-close" aria-label="关闭授权范围" onClick={() => setSelected(null)}>×</button></div><p className="connector-modal-intro">商家将在 {selected.name} 官方页面完成 OAuth 授权。RevenueOps 只请求必要的只读权限。</p><div className="scope-grid"><div><span>访问权限</span><strong>{selected.access}</strong></div><div><span>同步频率</span><strong>{selected.frequency}</strong></div><div className="scope-wide"><span>请求字段</span><strong>{selected.fields}</strong></div><div className="scope-wide"><span>使用目的</span><strong>{selected.purpose}</strong></div></div><div className="connector-modal-note">{selected.name === "Shopify" ? (shopifyReadiness?.message ?? "正在检查 Shopify 应用准备度。") : "该连接器尚未进入实施阶段。"}</div>{selected.name === "Shopify" && shopifyReady && <div className="connector-auth">{!accessToken ? <><input aria-label="登录用户名" placeholder="账号（3-32 位英文、数字、_ 或 -）" value={username} onChange={(event) => setUsername(event.target.value)} /><input aria-label="登录密码" type="password" placeholder="密码（至少 8 位）" value={password} onChange={(event) => setPassword(event.target.value)} />{isRegistering && <input aria-label="注册链接码" type="password" placeholder="邀请码" value={registrationCode} onChange={(event) => setRegistrationCode(event.target.value)} />}<button className="small-primary" onClick={isRegistering ? registerForConnection : loginForConnection}>{isRegistering ? "创建账号后连接" : "登录后连接"}</button><button className="connector-details-button" onClick={() => setIsRegistering(!isRegistering)}>{isRegistering ? "已有账号？登录" : "首次使用？创建账号"}</button></> : <><input aria-label="Shopify 店铺域名" placeholder="your-store.myshopify.com" value={shopDomain} onChange={(event) => setShopDomain(event.target.value)} /><button className="small-primary" onClick={beginShopifyAuthorization}>前往 Shopify 授权</button></>}</div>}{connectionError && <p className="connector-error" role="alert">{connectionError}</p>}<button className="connector-details-button" onClick={() => setSelected(null)}>关闭</button></section></div>}
 </main>; }

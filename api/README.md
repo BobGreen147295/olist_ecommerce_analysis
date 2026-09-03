@@ -22,6 +22,15 @@ Set these as host-managed secrets, never in Git:
 
 - `OPENAI_API_KEY` when `LLM_PROVIDER=openai`
 - `DATABASE_URL` for PostgreSQL/Supabase
+- `SESSION_SIGNING_KEY`: at least 32 random characters; signs the short-lived
+  browser API session and must never be committed.
+- `REGISTRATION_CODE`: a long one-time/private invitation code used only to
+  create the initial connection account; rotate it after the initial account is created.
+- `CONNECTION_TOKEN_ENCRYPTION_KEY`: a valid Fernet key used only to encrypt
+  merchant platform access tokens at rest.
+- `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `PUBLIC_API_BASE_URL`, and
+  `PUBLIC_WEB_URL` before enabling Shopify OAuth. The client secret and access
+  tokens remain server-side at all times.
 - `ALLOWED_ORIGINS=https://olist-revenueops.pages.dev`
 
 The included `Dockerfile.api` can be deployed on any container platform. The API should be deployed before setting `NEXT_PUBLIC_REVENUEOPS_API_URL` in Cloudflare Pages.

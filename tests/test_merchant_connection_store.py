@@ -24,10 +24,10 @@ def main() -> None:
             )
 
             state = issue_authorization_state("merchant-a", "demo-shop.myshopify.com")
-            context = consume_authorization_state("merchant-a", state)
+            context = consume_authorization_state(state)
             assert context["shop_domain"] == "demo-shop.myshopify.com"
             try:
-                consume_authorization_state("merchant-a", state)
+                consume_authorization_state(state)
                 raise AssertionError("state must be single-use")
             except ValueError:
                 pass
