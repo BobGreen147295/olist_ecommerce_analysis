@@ -42,6 +42,43 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
     ON chat_messages (conversation_id, created_at ASC);
 
+-- Merchant identities and external-platform connection vault. Access tokens are
+-- Fernet-encrypted by the application; raw tokens must never be placed here.
+CREATE TABLE IF NOT EXISTS merchant_workspaces (
+    workspace_id VARCHAR(32) PRIMARY KEY,
+    owner_username VARCHAR(32) NOT NULL UNIQUE,
+    display_name VARCHAR(120) NOT NULL,
+    created_at VARCHAR(40) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_authorization_states (
+    state_id VARCHAR(32) PRIMARY KEY,
+    state_digest VARCHAR(64) NOT NULL UNIQUE,
+    workspace_id VARCHAR(32) NOT NULL,
+    owner_username VARCHAR(32) NOT NULL,
+    provider VARCHAR(24) NOT NULL,
+    shop_domain VARCHAR(255) NOT NULL,
+    expires_at VARCHAR(40) NOT NULL,
+    consumed_at VARCHAR(40),
+    created_at VARCHAR(40) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS merchant_connections (
+    connection_id VARCHAR(32) PRIMARY KEY,
+    workspace_id VARCHAR(32) NOT NULL,
+    provider VARCHAR(24) NOT NULL,
+    shop_domain VARCHAR(255) NOT NULL,
+    encrypted_access_token TEXT NOT NULL,
+    granted_scopes TEXT NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    created_at VARCHAR(40) NOT NULL,
+    updated_at VARCHAR(40) NOT NULL,
+    UNIQUE (workspace_id, provider, shop_domain)
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_connections_workspace
+    ON merchant_connections (workspace_id, provider, status);
+
 CREATE TABLE IF NOT EXISTS commerce_data_sources (
     source_id VARCHAR(32) PRIMARY KEY,
     display_name VARCHAR(120) NOT NULL,
