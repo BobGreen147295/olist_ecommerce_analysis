@@ -20,6 +20,16 @@ from flask import Flask, jsonify, redirect, request
 MAX_MESSAGE_LENGTH = 1_500
 DEFAULT_ORIGINS = "https://olist-revenueops.pages.dev,http://localhost:3000"
 SHOPIFY_SCOPES = ("read_orders", "read_customers", "read_products", "read_inventory")
+SHOPIFY_API_VERSION = "2026-07"
+SHOPIFY_SUMMARY_QUERY = """
+query RevenueOpsInitialSummary {
+  shop { currencyCode }
+  ordersCount { count }
+  customersCount { count }
+  productsCount { count }
+  inventoryItemsCount { count }
+}
+"""
 
 
 def _allowed_origins() -> set[str]:
@@ -270,6 +280,56 @@ def create_app() -> Flask:
         except (ValueError, requests.RequestException, RuntimeError):
             app.logger.exception("Shopify authorization callback failed")
             return redirect(f"{os.environ.get('PUBLIC_WEB_URL', '').rstrip('/')}/data?shopify=failed", code=302)
+
+    @app.route("/v1/integrations/shopify/status", methods=["GET", "OPTIONS"])
+    def shopify_status() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            from src.agent.merchant_connection_store import get_shopify_connection_status
+            return jsonify({"connection": get_shopify_connection_status(session["username"])})
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+
+    @app.route("/v1/integrations/shopify/sync", methods=["POST", "OPTIONS"])
+    def sync_shopify() -> Any:
+        """只读取 Shopify 聚合计数并持久化结果，不保存可识别个人或设备的数据。"""
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            from src.agent.merchant_connection_store import get_shopify_connection_for_sync, save_shopify_sync_summary
+            connection = get_shopify_connection_for_sync(session["username"])
+            response = requests.post(
+                f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/graphql.json",
+                headers={"X-Shopify-Access-Token": connection["access_token"], "Content-Type": "application/json"},
+                json={"query": SHOPIFY_SUMMARY_QUERY}, timeout=20,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            errors = payload.get("errors") or payload.get("data", {}).get("errors")
+            if errors or not isinstance(payload.get("data"), dict):
+                raise ValueError("Shopify 未返回可用的汇总数据")
+            data = payload["data"]
+            shop = data.get("shop") or {}
+            summary = {
+                "orders": int((data.get("ordersCount") or {}).get("count", 0)),
+                "customers": int((data.get("customersCount") or {}).get("count", 0)),
+                "products": int((data.get("productsCount") or {}).get("count", 0)),
+                "inventory_items": int((data.get("inventoryItemsCount") or {}).get("count", 0)),
+                "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
+            }
+            result = save_shopify_sync_summary(connection["workspace_id"], connection["shop_domain"], summary)
+            return jsonify({"connection": {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except requests.RequestException:
+            app.logger.exception("Shopify aggregate sync request failed")
+            return jsonify({"error": "无法从 Shopify 同步汇总数据，请稍后重试"}), 502
+        except RuntimeError:
+            app.logger.exception("Shopify aggregate sync failed")
+            return jsonify({"error": "同步服务暂不可用，请重新授权后重试"}), 503
 
     @app.route("/v1/chat", methods=["POST", "OPTIONS"])
     def chat() -> Any:

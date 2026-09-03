@@ -18,8 +18,11 @@ def main() -> None:
         try:
             from src.agent.merchant_connection_store import (
                 consume_authorization_state,
+                get_shopify_connection_for_sync,
+                get_shopify_connection_status,
                 issue_authorization_state,
                 list_connection_summaries,
+                save_shopify_sync_summary,
                 save_shopify_connection,
             )
 
@@ -37,6 +40,16 @@ def main() -> None:
             summary = list_connection_summaries("merchant-a")
             assert summary[0]["shop_domain"] == "demo-shop.myshopify.com"
             assert "shpat_test_secret" not in repr(summary)
+            internal_connection = get_shopify_connection_for_sync("merchant-a")
+            assert internal_connection["access_token"] == "shpat_test_secret"
+            sync = save_shopify_sync_summary(context["workspace_id"], context["shop_domain"], {
+                "orders": 4, "customers": 3, "products": 2, "inventory_items": 6,
+                "currency_code": "USD", "email": "must-not-be-persisted@example.com",
+            })
+            assert sync["summary"] == {"orders": 4, "customers": 3, "products": 2, "inventory_items": 6, "currency_code": "USD"}
+            status = get_shopify_connection_status("merchant-a")
+            assert status and status["status"] == "synced" and status["summary"]["orders"] == 4
+            assert "must-not-be-persisted" not in repr(status)
         finally:
             if previous_url is None:
                 os.environ.pop("DATABASE_URL", None)

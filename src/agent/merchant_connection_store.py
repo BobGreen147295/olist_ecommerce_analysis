@@ -94,6 +94,24 @@ def _ensure_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_merchant_connections_workspace "
             "ON merchant_connections (workspace_id, provider, status)"
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS merchant_sync_runs (
+                sync_id VARCHAR(32) PRIMARY KEY,
+                workspace_id VARCHAR(32) NOT NULL,
+                provider VARCHAR(24) NOT NULL,
+                shop_domain VARCHAR(255) NOT NULL,
+                status VARCHAR(24) NOT NULL,
+                summary_json TEXT NOT NULL,
+                started_at VARCHAR(40) NOT NULL,
+                completed_at VARCHAR(40)
+            )
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_merchant_sync_runs_workspace "
+            "ON merchant_sync_runs (workspace_id, provider, completed_at)"
+        )
         conn.commit()
         cursor.close()
     finally:
@@ -234,5 +252,93 @@ def list_connection_summaries(owner_username: str) -> list[dict[str, Any]]:
              "status": row[3], "created_at": row[4], "updated_at": row[5]}
             for row in rows
         ]
+    finally:
+        conn.close()
+
+
+def get_shopify_connection_for_sync(owner_username: str) -> dict[str, str]:
+    """仅供服务端同步调用解密令牌；绝不能由 HTTP 响应返回这个字典。"""
+    workspace = get_or_create_workspace(owner_username)
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT connection_id, shop_domain, encrypted_access_token FROM merchant_connections "
+            f"WHERE workspace_id = {placeholder} AND provider = {placeholder} AND status IN ('connected', 'synced') "
+            f"ORDER BY updated_at DESC LIMIT 1",
+            (workspace["workspace_id"], "shopify"),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        if not row:
+            raise ValueError("尚未连接 Shopify 店铺")
+        try:
+            token = _cipher().decrypt(row[2].encode("ascii")).decode("utf-8")
+        except (InvalidToken, UnicodeDecodeError) as exc:
+            raise RuntimeError("Shopify 授权令牌无法解密，请重新授权") from exc
+        return {"workspace_id": workspace["workspace_id"], "connection_id": row[0], "shop_domain": row[1], "access_token": token}
+    finally:
+        conn.close()
+
+
+def save_shopify_sync_summary(workspace_id: str, shop_domain: str, summary: dict[str, Any]) -> dict[str, Any]:
+    """持久化只含聚合计数的同步结果，不存订单、客户或设备级原始数据。"""
+    allowed = {"orders", "customers", "products", "inventory_items", "currency_code"}
+    safe_summary = {key: summary[key] for key in allowed if key in summary}
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        import json
+        cursor = conn.cursor()
+        now = _now()
+        cursor.execute(
+            f"INSERT INTO merchant_sync_runs "
+            f"(sync_id, workspace_id, provider, shop_domain, status, summary_json, started_at, completed_at) "
+            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
+            (uuid.uuid4().hex[:24], workspace_id, "shopify", shop_domain, "completed", json.dumps(safe_summary), now, now),
+        )
+        cursor.execute(
+            f"UPDATE merchant_connections SET status = {placeholder}, updated_at = {placeholder} "
+            f"WHERE workspace_id = {placeholder} AND provider = {placeholder} AND shop_domain = {placeholder}",
+            ("synced", now, workspace_id, "shopify", shop_domain),
+        )
+        conn.commit()
+        cursor.close()
+        return {"status": "synced", "last_synced_at": now, "summary": safe_summary}
+    finally:
+        conn.close()
+
+
+def get_shopify_connection_status(owner_username: str) -> dict[str, Any] | None:
+    """返回给前端的安全连接状态；不含令牌、密文或任何原始商店数据。"""
+    workspace = get_or_create_workspace(owner_username)
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        import json
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT shop_domain, status FROM merchant_connections WHERE workspace_id = {placeholder} "
+            f"AND provider = {placeholder} ORDER BY updated_at DESC LIMIT 1",
+            (workspace["workspace_id"], "shopify"),
+        )
+        connection = cursor.fetchone()
+        if not connection:
+            cursor.close()
+            return None
+        cursor.execute(
+            f"SELECT summary_json, completed_at FROM merchant_sync_runs WHERE workspace_id = {placeholder} "
+            f"AND provider = {placeholder} AND shop_domain = {placeholder} AND status = 'completed' "
+            f"ORDER BY completed_at DESC LIMIT 1",
+            (workspace["workspace_id"], "shopify", connection[0]),
+        )
+        latest = cursor.fetchone()
+        cursor.close()
+        return {
+            "provider": "shopify", "shop_domain": connection[0], "status": connection[1],
+            "last_synced_at": latest[1] if latest else None,
+            "summary": json.loads(latest[0]) if latest else None,
+        }
     finally:
         conn.close()
