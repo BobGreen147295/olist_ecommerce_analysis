@@ -13,6 +13,9 @@ def main() -> None:
     client = create_app().test_client()
     health = client.get("/health")
     assert health.status_code == 200, health.get_data(as_text=True)
+    readiness = client.get("/v1/integrations/shopify/readiness")
+    assert readiness.status_code == 200, readiness.get_data(as_text=True)
+    assert readiness.json["state"] in {"configuration_required", "ready_to_authorize"}
     invalid = client.post("/v1/chat", json={})
     assert invalid.status_code == 400, invalid.get_data(as_text=True)
     answer = _format_agent_answer({

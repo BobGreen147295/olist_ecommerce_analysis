@@ -15,6 +15,7 @@ from flask import Flask, jsonify, request
 
 MAX_MESSAGE_LENGTH = 1_500
 DEFAULT_ORIGINS = "https://olist-revenueops.pages.dev,http://localhost:3000"
+SHOPIFY_SCOPES = ("read_orders", "read_customers", "read_products", "read_inventory")
 
 
 def _allowed_origins() -> set[str]:
@@ -87,6 +88,24 @@ def _format_agent_answer(result: dict[str, Any]) -> str:
     return f"{opening}\n\n{basis}\n\n{action_text} 这是一项需要人工确认的建议，效果应通过小范围 A/B 测试验证。"
 
 
+def _shopify_readiness() -> dict[str, Any]:
+    """只公开连接器的准备状态，绝不向浏览器返回 OAuth 密钥。"""
+    missing = []
+    if not os.environ.get("SHOPIFY_CLIENT_ID"):
+        missing.append("SHOPIFY_CLIENT_ID")
+    if not os.environ.get("SHOPIFY_CLIENT_SECRET"):
+        missing.append("SHOPIFY_CLIENT_SECRET")
+    if not os.environ.get("SHOPIFY_APP_URL"):
+        missing.append("SHOPIFY_APP_URL")
+    return {
+        "provider": "shopify",
+        "state": "ready_to_authorize" if not missing else "configuration_required",
+        "required_scopes": list(SHOPIFY_SCOPES),
+        "missing_configuration": missing,
+        "message": "可由商家开始 OAuth 授权" if not missing else "尚未配置 Shopify 应用凭据，不能发起授权。",
+    }
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["JSON_AS_ASCII"] = False
@@ -101,6 +120,12 @@ def create_app() -> Flask:
             return "", 204
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
         return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider})
+
+    @app.route("/v1/integrations/shopify/readiness", methods=["GET", "OPTIONS"])
+    def shopify_readiness() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        return jsonify(_shopify_readiness())
 
     @app.route("/v1/chat", methods=["POST", "OPTIONS"])
     def chat() -> Any:
