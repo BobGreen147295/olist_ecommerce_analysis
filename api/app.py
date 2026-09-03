@@ -27,7 +27,10 @@ query RevenueOpsInitialSummary {
   ordersCount { count }
   customersCount { count }
   productsCount { count }
-  inventoryItemsCount { count }
+  inventoryItems(first: 250) {
+    nodes { id }
+    pageInfo { hasNextPage }
+  }
 }
 """
 
@@ -317,7 +320,9 @@ def create_app() -> Flask:
                 "orders": int((data.get("ordersCount") or {}).get("count", 0)),
                 "customers": int((data.get("customersCount") or {}).get("count", 0)),
                 "products": int((data.get("productsCount") or {}).get("count", 0)),
-                "inventory_items": int((data.get("inventoryItemsCount") or {}).get("count", 0)),
+                # Shopify Admin GraphQL 没有 inventoryItemsCount。只读取最多 250 个
+                # 非业务 ID 来计数，随后立即丢弃，避免写入任何库存项级数据。
+                "inventory_items": len((data.get("inventoryItems") or {}).get("nodes") or []),
                 "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
             }
             result = save_shopify_sync_summary(connection["workspace_id"], connection["shop_domain"], summary)
