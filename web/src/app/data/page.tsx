@@ -11,6 +11,7 @@ const connectors = [
   { name: "Meta Ads", type: "广告消耗、投放、转化", detail: "第三阶段 · 计算渠道级增量 ROI", icon: "M", frequency: "每日同步", access: "只读", fields: "账户、广告组、消耗、点击、转化", purpose: "建立渠道成本与收入归因" },
 ];
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
+const SHOPIFY_SUMMARY_CACHE_KEY = "revenueops_shopify_summary_v1";
 type ShopifyReadiness = { state: "configuration_required" | "ready_to_authorize"; message: string; required_scopes: string[] };
 type ShopifyConnection = { provider: "shopify"; shop_domain: string; status: "connected" | "synced"; last_synced_at: string | null; summary: { orders: number; customers: number; products: number; inventory_items: number; currency_code: string | null } | null };
 
@@ -26,11 +27,15 @@ export default function DataPage() {
   const [connectionError, setConnectionError] = useState("");
   const [shopifyConnection, setShopifyConnection] = useState<ShopifyConnection | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  function rememberShopifyConnection(connection: ShopifyConnection | null) {
+    setShopifyConnection(connection);
+    if (connection?.summary) localStorage.setItem(SHOPIFY_SUMMARY_CACHE_KEY, JSON.stringify({ connection, cached_at: Date.now() }));
+  }
   async function loadShopifyConnection(token: string) {
     if (!API_BASE_URL || !token) return;
     const response = await fetch(`${API_BASE_URL}/v1/integrations/shopify/status`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json().catch(() => ({}));
-    if (response.ok) setShopifyConnection(data.connection ?? null);
+    if (response.ok) rememberShopifyConnection(data.connection ?? null);
   }
   useEffect(() => {
     const token = sessionStorage.getItem("revenueops_access_token") ?? "";
@@ -69,7 +74,7 @@ export default function DataPage() {
     const data = await response.json().catch(() => ({}));
     setIsSyncing(false);
     if (!response.ok || !data.connection) { setConnectionError(data.error ?? "首次同步失败，请稍后重试。"); return; }
-    setShopifyConnection(data.connection);
+    rememberShopifyConnection(data.connection);
   }
   const shopifyReady = shopifyReadiness?.state === "ready_to_authorize";
   const shopifyConnected = Boolean(shopifyConnection);

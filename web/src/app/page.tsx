@@ -6,6 +6,7 @@ import { Metric, PageHeading, StatusBadge } from "@/components/Ui";
 import { opportunities, workspace } from "@/lib/demo-data";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
+const SHOPIFY_SUMMARY_CACHE_KEY = "revenueops_shopify_summary_v1";
 type ShopifySummary = { orders: number; customers: number; products: number; inventory_items: number; currency_code: string | null };
 type ShopifyConnection = { shop_domain: string; status: "connected" | "synced"; last_synced_at: string | null; summary: ShopifySummary | null };
 
@@ -13,12 +14,22 @@ export default function OverviewPage() {
   const top = opportunities[0];
   const [shopify, setShopify] = useState<ShopifyConnection | null>(null);
   useEffect(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem(SHOPIFY_SUMMARY_CACHE_KEY) ?? "null");
+      if (cached?.connection?.summary && Date.now() - cached.cached_at < 86_400_000) setShopify(cached.connection);
+    } catch { /* Ignore malformed browser-only cache. */ }
     const token = sessionStorage.getItem("revenueops_access_token");
     if (!token || !API_BASE_URL) return;
     fetch(`${API_BASE_URL}/v1/integrations/shopify/status`, { headers: { Authorization: `Bearer ${token}` } })
       .then((response) => response.ok ? response.json() : null)
-      .then((data) => setShopify(data?.connection ?? null))
-      .catch(() => setShopify(null));
+      .then((data) => {
+        const connection = data?.connection;
+        if (connection?.summary) {
+          setShopify(connection);
+          localStorage.setItem(SHOPIFY_SUMMARY_CACHE_KEY, JSON.stringify({ connection, cached_at: Date.now() }));
+        }
+      })
+      .catch(() => undefined);
   }, []);
   const summary = shopify?.summary;
   return <main className="page-content">
