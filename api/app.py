@@ -349,7 +349,14 @@ def create_app() -> Flask:
         try:
             session = _require_session()
             from src.agent.merchant_connection_store import get_shopify_connection_status
-            return jsonify({"connection": get_shopify_connection_status(session["username"])})
+            connection = get_shopify_connection_status(session["username"])
+            # 旧版同步在保存趋势前失败时，已存在的安全汇总会一直显示，
+            # 但没有机会自动补齐。仅当趋势缺失时，在仪表盘读取状态时做一次
+            # 与手动“重新同步”完全相同的只读补齐；成功后立即重新读取状态。
+            if connection and isinstance(connection.get("summary"), dict) and "order_trend" not in connection["summary"]:
+                sync_shopify()
+                connection = get_shopify_connection_status(session["username"])
+            return jsonify({"connection": connection})
         except (ValueError, RuntimeError):
             return jsonify({"error": "登录已失效，请重新登录"}), 401
 
