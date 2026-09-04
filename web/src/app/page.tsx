@@ -28,7 +28,10 @@ export default function OverviewPage() {
     const token = sessionStorage.getItem("revenueops_access_token");
     if (!token || !API_BASE_URL) return;
     fetch(`${API_BASE_URL}/v1/integrations/shopify/status`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((response) => response.ok ? response.json() : null)
+      .then((response) => {
+        if (response.status === 401) sessionStorage.removeItem("revenueops_access_token");
+        return response.ok ? response.json() : null;
+      })
       .then((data) => {
         const connection = data?.connection;
         if (connection?.summary) {

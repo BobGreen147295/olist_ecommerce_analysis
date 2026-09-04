@@ -35,6 +35,13 @@ export default function DataPage() {
   async function loadShopifyConnection(token: string) {
     if (!API_BASE_URL || !token) return;
     const response = await fetch(`${API_BASE_URL}/v1/integrations/shopify/status`, { headers: { Authorization: `Bearer ${token}` } });
+    if (response.status === 401) {
+      sessionStorage.removeItem("revenueops_access_token");
+      setAccessToken("");
+      setShopifyConnection(null);
+      setConnectionError("登录已过期，请重新登录后继续管理 Shopify 连接。");
+      return;
+    }
     const data = await response.json().catch(() => ({}));
     if (response.ok) rememberShopifyConnection(data.connection ?? null);
   }
@@ -65,6 +72,7 @@ export default function DataPage() {
   async function beginShopifyAuthorization() {
     setConnectionError("");
     const response = await fetch(`${API_BASE_URL}/v1/integrations/shopify/authorize`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ shop_domain: shopDomain }) });
+    if (response.status === 401) { sessionStorage.removeItem("revenueops_access_token"); setAccessToken(""); setConnectionError("登录已过期，请重新登录。"); return; }
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.authorization_url) { setConnectionError(data.error ?? "无法发起 Shopify 授权。"); return; }
     window.location.assign(data.authorization_url);
@@ -72,6 +80,7 @@ export default function DataPage() {
   async function syncShopify() {
     setConnectionError(""); setIsSyncing(true);
     const response = await fetch(`${API_BASE_URL}/v1/integrations/shopify/sync`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } });
+    if (response.status === 401) { sessionStorage.removeItem("revenueops_access_token"); setAccessToken(""); setIsSyncing(false); setConnectionError("登录已过期，请重新登录后再同步。"); return; }
     const data = await response.json().catch(() => ({}));
     setIsSyncing(false);
     if (!response.ok || !data.connection) { setConnectionError(data.error ?? "首次同步失败，请稍后重试。"); return; }
