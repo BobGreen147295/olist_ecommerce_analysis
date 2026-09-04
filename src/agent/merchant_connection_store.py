@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -25,7 +26,25 @@ _STATE_TTL_MINUTES = 10
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+_SUMMARY_COUNT_KEYS = ("orders", "customers", "products", "inventory_items")
+
+
+def _summary_comparison(
+    current: dict[str, Any], previous: dict[str, Any] | None, previous_synced_at: str | None,
+) -> dict[str, Any] | None:
+    """比较两次安全汇总；只返回聚合计数差值。"""
+    if not previous or not previous_synced_at:
+        return None
+    return {
+        "previous_synced_at": previous_synced_at,
+        "deltas": {
+            key: int(current.get(key, 0)) - int(previous.get(key, 0))
+            for key in _SUMMARY_COUNT_KEYS
+        },
+    }
 
 
 def _state_digest(value: str) -> str:
@@ -289,9 +308,15 @@ def save_shopify_sync_summary(workspace_id: str, shop_domain: str, summary: dict
     _ensure_schema()
     conn, placeholder = _connect_database()
     try:
-        import json
         cursor = conn.cursor()
         now = _now()
+        cursor.execute(
+            f"SELECT summary_json, completed_at FROM merchant_sync_runs WHERE workspace_id = {placeholder} "
+            f"AND provider = {placeholder} AND shop_domain = {placeholder} AND status = 'completed' "
+            f"ORDER BY completed_at DESC LIMIT 1",
+            (workspace_id, "shopify", shop_domain),
+        )
+        previous_row = cursor.fetchone()
         cursor.execute(
             f"INSERT INTO merchant_sync_runs "
             f"(sync_id, workspace_id, provider, shop_domain, status, summary_json, started_at, completed_at) "
@@ -305,7 +330,9 @@ def save_shopify_sync_summary(workspace_id: str, shop_domain: str, summary: dict
         )
         conn.commit()
         cursor.close()
-        return {"status": "synced", "last_synced_at": now, "summary": safe_summary}
+        previous_summary = json.loads(previous_row[0]) if previous_row else None
+        comparison = _summary_comparison(safe_summary, previous_summary, previous_row[1] if previous_row else None)
+        return {"status": "synced", "last_synced_at": now, "summary": safe_summary, "comparison": comparison}
     finally:
         conn.close()
 
@@ -316,7 +343,6 @@ def get_shopify_connection_status(owner_username: str) -> dict[str, Any] | None:
     _ensure_schema()
     conn, placeholder = _connect_database()
     try:
-        import json
         cursor = conn.cursor()
         cursor.execute(
             f"SELECT shop_domain, status FROM merchant_connections WHERE workspace_id = {placeholder} "
@@ -330,15 +356,20 @@ def get_shopify_connection_status(owner_username: str) -> dict[str, Any] | None:
         cursor.execute(
             f"SELECT summary_json, completed_at FROM merchant_sync_runs WHERE workspace_id = {placeholder} "
             f"AND provider = {placeholder} AND shop_domain = {placeholder} AND status = 'completed' "
-            f"ORDER BY completed_at DESC LIMIT 1",
+            f"ORDER BY completed_at DESC LIMIT 2",
             (workspace["workspace_id"], "shopify", connection[0]),
         )
-        latest = cursor.fetchone()
+        rows = cursor.fetchall()
         cursor.close()
+        latest = rows[0] if rows else None
+        previous = rows[1] if len(rows) > 1 else None
+        latest_summary = json.loads(latest[0]) if latest else None
+        previous_summary = json.loads(previous[0]) if previous else None
         return {
             "provider": "shopify", "shop_domain": connection[0], "status": connection[1],
             "last_synced_at": latest[1] if latest else None,
-            "summary": json.loads(latest[0]) if latest else None,
+            "summary": latest_summary,
+            "comparison": _summary_comparison(latest_summary, previous_summary, previous[1] if previous else None) if latest_summary else None,
         }
     finally:
         conn.close()

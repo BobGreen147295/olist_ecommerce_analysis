@@ -49,7 +49,17 @@ def main() -> None:
             assert sync["summary"] == {"orders": 4, "customers": 3, "products": 2, "inventory_items": 6, "currency_code": "USD"}
             status = get_shopify_connection_status("merchant-a")
             assert status and status["status"] == "synced" and status["summary"]["orders"] == 4
+            assert status["comparison"] is None
             assert "must-not-be-persisted" not in repr(status)
+            second_sync = save_shopify_sync_summary(context["workspace_id"], context["shop_domain"], {
+                "orders": 5, "customers": 3, "products": 3, "inventory_items": 8,
+                "currency_code": "USD",
+            })
+            assert second_sync["comparison"]["deltas"] == {
+                "orders": 1, "customers": 0, "products": 1, "inventory_items": 2,
+            }
+            status = get_shopify_connection_status("merchant-a")
+            assert status and status["comparison"]["deltas"]["orders"] == 1
         finally:
             if previous_url is None:
                 os.environ.pop("DATABASE_URL", None)
