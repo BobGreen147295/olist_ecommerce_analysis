@@ -45,7 +45,6 @@ query RevenueOpsOrderTrend($first: Int!, $after: String, $query: String!) {
       createdAt
       totalPriceSet { shopMoney { amount currencyCode } }
       currentTotalPriceSet { shopMoney { amount currencyCode } }
-      refunds { totalRefundedSet { shopMoney { amount currencyCode } } }
     }
     pageInfo { hasNextPage endCursor }
   }
@@ -72,13 +71,13 @@ def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncate
             continue
         bucket = daily[created_at[:10]]
         bucket["orders"] = int(bucket["orders"]) + 1
-        bucket["gross_sales"] = Decimal(bucket["gross_sales"]) + _money_amount(node.get("totalPriceSet"))
-        bucket["net_sales"] = Decimal(bucket["net_sales"]) + _money_amount(node.get("currentTotalPriceSet"))
-        refunds = node.get("refunds") if isinstance(node.get("refunds"), list) else []
-        bucket["refunds"] = Decimal(bucket["refunds"]) + sum(
-            (_money_amount(refund.get("totalRefundedSet")) for refund in refunds if isinstance(refund, dict)),
-            Decimal("0"),
-        )
+        gross = _money_amount(node.get("totalPriceSet"))
+        net = _money_amount(node.get("currentTotalPriceSet"))
+        bucket["gross_sales"] = Decimal(bucket["gross_sales"]) + gross
+        bucket["net_sales"] = Decimal(bucket["net_sales"]) + net
+        # Shopify 的 currentTotalPriceSet 已扣除退款、退货和订单编辑。
+        # 因此这里是“退款/订单调整额”，不会伪装成纯退款金额。
+        bucket["refunds"] = Decimal(bucket["refunds"]) + max(gross - net, Decimal("0"))
 
     days = [
         {"date": date, "orders": values["orders"], "gross_sales": float(values["gross_sales"]), "net_sales": float(values["net_sales"]), "refunds": float(values["refunds"])}
@@ -90,7 +89,7 @@ def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncate
         "truncated": truncated,
         "days": days,
         "totals": {"orders": sum(day["orders"] for day in days), "gross_sales": round(sum(day["gross_sales"] for day in days), 2), "net_sales": round(sum(day["net_sales"] for day in days), 2), "refunds": round(sum(day["refunds"] for day in days), 2)},
-        "refund_attribution": "按原订单日期归集",
+        "refund_attribution": "退款及订单调整额按原订单日期归集",
     }
 
 
