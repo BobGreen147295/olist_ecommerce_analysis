@@ -44,9 +44,10 @@ def main() -> None:
             assert internal_connection["access_token"] == "shpat_test_secret"
             sync = save_shopify_sync_summary(context["workspace_id"], context["shop_domain"], {
                 "orders": 4, "customers": 3, "products": 2, "inventory_items": 6,
-                "currency_code": "USD", "email": "must-not-be-persisted@example.com",
+                "currency_code": "USD", "order_trend": {"window_days": 30, "days": []},
+                "email": "must-not-be-persisted@example.com",
             })
-            assert sync["summary"] == {"orders": 4, "customers": 3, "products": 2, "inventory_items": 6, "currency_code": "USD"}
+            assert sync["summary"] == {"orders": 4, "customers": 3, "products": 2, "inventory_items": 6, "currency_code": "USD", "order_trend": {"window_days": 30, "days": []}}
             status = get_shopify_connection_status("merchant-a")
             assert status and status["status"] == "synced" and status["summary"]["orders"] == 4
             assert status["comparison"] is None

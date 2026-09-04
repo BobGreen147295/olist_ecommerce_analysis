@@ -10,6 +10,9 @@ import os
 import re
 import hashlib
 import hmac
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urlencode
 
@@ -33,6 +36,58 @@ query RevenueOpsInitialSummary {
   }
 }
 """
+SHOPIFY_TREND_PAGE_SIZE = 250
+SHOPIFY_TREND_MAX_ORDERS = 1_000
+SHOPIFY_ORDER_TREND_QUERY = """
+query RevenueOpsOrderTrend($first: Int!, $after: String, $query: String!) {
+  orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT) {
+    nodes {
+      createdAt
+      totalPriceSet { shopMoney { amount currencyCode } }
+      currentTotalPriceSet { shopMoney { amount currencyCode } }
+      totalRefundedSet { shopMoney { amount currencyCode } }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+"""
+
+
+def _money_amount(value: Any) -> Decimal:
+    """解析 Shopify 金额；无效值按零处理，且不保存原始订单。"""
+    try:
+        return Decimal(str((((value or {}).get("shopMoney") or {}).get("amount") or "0")))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+
+
+def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncated: bool) -> dict[str, Any]:
+    """将瞬时订单节点压缩为按原订单日期汇总，不保留订单或客户标识。"""
+    daily: dict[str, dict[str, Decimal | int]] = defaultdict(
+        lambda: {"orders": 0, "gross_sales": Decimal("0"), "net_sales": Decimal("0"), "refunds": Decimal("0")}
+    )
+    for node in nodes:
+        created_at = node.get("createdAt") if isinstance(node, dict) else None
+        if not isinstance(created_at, str) or len(created_at) < 10:
+            continue
+        bucket = daily[created_at[:10]]
+        bucket["orders"] = int(bucket["orders"]) + 1
+        bucket["gross_sales"] = Decimal(bucket["gross_sales"]) + _money_amount(node.get("totalPriceSet"))
+        bucket["net_sales"] = Decimal(bucket["net_sales"]) + _money_amount(node.get("currentTotalPriceSet"))
+        bucket["refunds"] = Decimal(bucket["refunds"]) + _money_amount(node.get("totalRefundedSet"))
+
+    days = [
+        {"date": date, "orders": values["orders"], "gross_sales": float(values["gross_sales"]), "net_sales": float(values["net_sales"]), "refunds": float(values["refunds"])}
+        for date, values in sorted(daily.items())
+    ]
+    return {
+        "window_days": window_days,
+        "orders_scanned": sum(day["orders"] for day in days),
+        "truncated": truncated,
+        "days": days,
+        "totals": {"orders": sum(day["orders"] for day in days), "gross_sales": round(sum(day["gross_sales"] for day in days), 2), "net_sales": round(sum(day["net_sales"] for day in days), 2), "refunds": round(sum(day["refunds"] for day in days), 2)},
+        "refund_attribution": "按原订单日期归集",
+    }
 
 
 def _allowed_origins() -> set[str]:
@@ -297,7 +352,7 @@ def create_app() -> Flask:
 
     @app.route("/v1/integrations/shopify/sync", methods=["POST", "OPTIONS"])
     def sync_shopify() -> Any:
-        """只读取 Shopify 聚合计数并持久化结果，不保存可识别个人或设备的数据。"""
+        """同步计数与近 30 天订单日汇总，不保存订单、客户或设备级数据。"""
         if request.method == "OPTIONS":
             return "", 204
         try:
@@ -325,6 +380,37 @@ def create_app() -> Flask:
                 "inventory_items": len((data.get("inventoryItems") or {}).get("nodes") or []),
                 "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
             }
+            since = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+            trend_nodes: list[dict[str, Any]] = []
+            cursor: str | None = None
+            has_next_page = True
+            while has_next_page and len(trend_nodes) < SHOPIFY_TREND_MAX_ORDERS:
+                trend_response = requests.post(
+                    f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/graphql.json",
+                    headers={"X-Shopify-Access-Token": connection["access_token"], "Content-Type": "application/json"},
+                    json={"query": SHOPIFY_ORDER_TREND_QUERY, "variables": {
+                        "first": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS - len(trend_nodes)),
+                        "after": cursor,
+                        "query": f"created_at:>={since}",
+                    }},
+                    timeout=20,
+                )
+                trend_response.raise_for_status()
+                trend_payload = trend_response.json()
+                trend_errors = trend_payload.get("errors") or trend_payload.get("data", {}).get("errors")
+                trend_orders = (trend_payload.get("data") or {}).get("orders")
+                if trend_errors or not isinstance(trend_orders, dict):
+                    raise ValueError("Shopify 未返回可用的订单趋势数据")
+                nodes = trend_orders.get("nodes") or []
+                trend_nodes.extend(node for node in nodes if isinstance(node, dict))
+                page_info = trend_orders.get("pageInfo") or {}
+                has_next_page = bool(page_info.get("hasNextPage"))
+                cursor = page_info.get("endCursor") if isinstance(page_info.get("endCursor"), str) else None
+                if has_next_page and not cursor:
+                    raise ValueError("Shopify 订单趋势分页信息无效")
+            summary["order_trend"] = _shopify_order_trend(
+                trend_nodes, 30, has_next_page or len(trend_nodes) >= SHOPIFY_TREND_MAX_ORDERS,
+            )
             result = save_shopify_sync_summary(connection["workspace_id"], connection["shop_domain"], summary)
             return jsonify({"connection": {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}})
         except ValueError as exc:

@@ -303,7 +303,7 @@ def get_shopify_connection_for_sync(owner_username: str) -> dict[str, str]:
 
 def save_shopify_sync_summary(workspace_id: str, shop_domain: str, summary: dict[str, Any]) -> dict[str, Any]:
     """持久化只含聚合计数的同步结果，不存订单、客户或设备级原始数据。"""
-    allowed = {"orders", "customers", "products", "inventory_items", "currency_code"}
+    allowed = {"orders", "customers", "products", "inventory_items", "currency_code", "order_trend"}
     safe_summary = {key: summary[key] for key in allowed if key in summary}
     _ensure_schema()
     conn, placeholder = _connect_database()
