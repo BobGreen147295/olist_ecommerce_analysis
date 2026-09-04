@@ -45,7 +45,7 @@ query RevenueOpsOrderTrend($first: Int!, $after: String, $query: String!) {
       createdAt
       totalPriceSet { shopMoney { amount currencyCode } }
       currentTotalPriceSet { shopMoney { amount currencyCode } }
-      totalRefundedSet { shopMoney { amount currencyCode } }
+      refunds { totalRefundedSet { shopMoney { amount currencyCode } } }
     }
     pageInfo { hasNextPage endCursor }
   }
@@ -74,7 +74,11 @@ def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncate
         bucket["orders"] = int(bucket["orders"]) + 1
         bucket["gross_sales"] = Decimal(bucket["gross_sales"]) + _money_amount(node.get("totalPriceSet"))
         bucket["net_sales"] = Decimal(bucket["net_sales"]) + _money_amount(node.get("currentTotalPriceSet"))
-        bucket["refunds"] = Decimal(bucket["refunds"]) + _money_amount(node.get("totalRefundedSet"))
+        refunds = node.get("refunds") if isinstance(node.get("refunds"), list) else []
+        bucket["refunds"] = Decimal(bucket["refunds"]) + sum(
+            (_money_amount(refund.get("totalRefundedSet")) for refund in refunds if isinstance(refund, dict)),
+            Decimal("0"),
+        )
 
     days = [
         {"date": date, "orders": values["orders"], "gross_sales": float(values["gross_sales"]), "net_sales": float(values["net_sales"]), "refunds": float(values["refunds"])}

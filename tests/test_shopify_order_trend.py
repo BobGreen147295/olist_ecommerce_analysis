@@ -13,8 +13,8 @@ def money(amount: str) -> dict:
 
 def main() -> None:
     trend = _shopify_order_trend([
-        {"createdAt": "2026-09-01T03:00:00Z", "totalPriceSet": money("20.00"), "currentTotalPriceSet": money("15.00"), "totalRefundedSet": money("5.00")},
-        {"createdAt": "2026-09-01T14:00:00Z", "totalPriceSet": money("10.00"), "currentTotalPriceSet": money("10.00"), "totalRefundedSet": money("0.00")},
+        {"createdAt": "2026-09-01T03:00:00Z", "totalPriceSet": money("20.00"), "currentTotalPriceSet": money("15.00"), "refunds": [{"totalRefundedSet": money("5.00")}]},
+        {"createdAt": "2026-09-01T14:00:00Z", "totalPriceSet": money("10.00"), "currentTotalPriceSet": money("10.00"), "refunds": []},
     ], 30, False)
     assert trend["totals"] == {"orders": 2, "gross_sales": 30.0, "net_sales": 25.0, "refunds": 5.0}
     assert trend["days"] == [{"date": "2026-09-01", "orders": 2, "gross_sales": 30.0, "net_sales": 25.0, "refunds": 5.0}]
