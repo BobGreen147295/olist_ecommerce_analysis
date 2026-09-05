@@ -26,7 +26,7 @@ SHOPIFY_SCOPES = ("read_orders", "read_customers", "read_products", "read_invent
 SHOPIFY_API_VERSION = "2026-07"
 SHOPIFY_SUMMARY_QUERY = """
 query RevenueOpsInitialSummary {
-  shop { currencyCode }
+  shop { currencyCode plan { partnerDevelopment } }
   ordersCount { count }
   customersCount { count }
   productsCount { count }
@@ -427,6 +427,7 @@ def create_app() -> Flask:
                 # 非业务 ID 来计数，随后立即丢弃，避免写入任何库存项级数据。
                 "inventory_items": len((data.get("inventoryItems") or {}).get("nodes") or []),
                 "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
+                "is_development_store": bool((shop.get("plan") or {}).get("partnerDevelopment")),
             }
             since = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
             trend_nodes: list[dict[str, Any]] = []

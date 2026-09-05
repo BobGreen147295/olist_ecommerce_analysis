@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("LLM_PROVIDER", "ollama")
 
-from api.app import _format_agent_answer, create_app  # noqa: E402
+from api.app import SHOPIFY_SUMMARY_QUERY, _format_agent_answer, create_app  # noqa: E402
 
 
 def main() -> None:
@@ -16,6 +16,7 @@ def main() -> None:
     readiness = client.get("/v1/integrations/shopify/readiness")
     assert readiness.status_code == 200, readiness.get_data(as_text=True)
     assert readiness.json["state"] in {"configuration_required", "ready_to_authorize"}
+    assert "partnerDevelopment" in SHOPIFY_SUMMARY_QUERY
     invalid = client.post("/v1/chat", json={})
     assert invalid.status_code == 400, invalid.get_data(as_text=True)
     answer = _format_agent_answer({
