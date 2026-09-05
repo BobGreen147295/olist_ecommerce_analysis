@@ -93,6 +93,42 @@ def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncate
     }
 
 
+def _shopify_rest_order_trend(connection: dict[str, Any], since: str, currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
+    """GraphQL 趋势不可用时，以 REST 最小订单字段生成瞬时节点并立即聚合。"""
+    url = f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
+    headers = {"X-Shopify-Access-Token": connection["access_token"]}
+    nodes: list[dict[str, Any]] = []
+    truncated = False
+    params: dict[str, Any] | None = {
+        "status": "any", "created_at_min": f"{since}T00:00:00Z", "limit": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS),
+        "fields": "created_at,total_price,current_total_price,currency",
+    }
+    while url and len(nodes) < SHOPIFY_TREND_MAX_ORDERS:
+        response = requests.get(url, headers=headers, params=params, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+        orders = payload.get("orders") if isinstance(payload, dict) else None
+        if not isinstance(orders, list):
+            raise ValueError("Shopify 未返回可用的订单趋势数据")
+        for order in orders:
+            if not isinstance(order, dict) or not isinstance(order.get("created_at"), str):
+                continue
+            order_currency = order.get("currency") if isinstance(order.get("currency"), str) else (currency_code or "USD")
+            nodes.append({
+                "createdAt": order["created_at"],
+                "totalPriceSet": {"shopMoney": {"amount": order.get("total_price") or "0", "currencyCode": order_currency}},
+                "currentTotalPriceSet": {"shopMoney": {"amount": order.get("current_total_price") or "0", "currencyCode": order_currency}},
+            })
+            if len(nodes) >= SHOPIFY_TREND_MAX_ORDERS:
+                truncated = True
+                break
+        url = response.links.get("next", {}).get("url")
+        params = None
+        if url and len(nodes) >= SHOPIFY_TREND_MAX_ORDERS:
+            truncated = True
+    return nodes, truncated
+
+
 def _allowed_origins() -> set[str]:
     values = os.environ.get("ALLOWED_ORIGINS", DEFAULT_ORIGINS)
     return {value.strip().rstrip("/") for value in values.split(",") if value.strip()}
@@ -410,7 +446,11 @@ def create_app() -> Flask:
                 trend_errors = trend_payload.get("errors") or trend_payload.get("data", {}).get("errors")
                 trend_orders = (trend_payload.get("data") or {}).get("orders")
                 if trend_errors or not isinstance(trend_orders, dict):
-                    raise ValueError("Shopify 未返回可用的订单趋势数据")
+                    # 个别店铺/API 版本可能拒绝 GraphQL 的趋势字段；改用同一
+                    # read_orders 权限下的 REST 最小字段，不阻断已授权的汇总同步。
+                    trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, since, summary["currency_code"])
+                    has_next_page = rest_truncated
+                    break
                 nodes = trend_orders.get("nodes") or []
                 trend_nodes.extend(node for node in nodes if isinstance(node, dict))
                 page_info = trend_orders.get("pageInfo") or {}
