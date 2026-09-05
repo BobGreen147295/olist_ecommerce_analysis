@@ -431,18 +431,25 @@ def create_app() -> Flask:
             cursor: str | None = None
             has_next_page = True
             while has_next_page and len(trend_nodes) < SHOPIFY_TREND_MAX_ORDERS:
-                trend_response = requests.post(
-                    f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/graphql.json",
-                    headers={"X-Shopify-Access-Token": connection["access_token"], "Content-Type": "application/json"},
-                    json={"query": SHOPIFY_ORDER_TREND_QUERY, "variables": {
-                        "first": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS - len(trend_nodes)),
-                        "after": cursor,
-                        "query": f"created_at:>={since}",
-                    }},
-                    timeout=20,
-                )
-                trend_response.raise_for_status()
-                trend_payload = trend_response.json()
+                try:
+                    trend_response = requests.post(
+                        f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/graphql.json",
+                        headers={"X-Shopify-Access-Token": connection["access_token"], "Content-Type": "application/json"},
+                        json={"query": SHOPIFY_ORDER_TREND_QUERY, "variables": {
+                            "first": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS - len(trend_nodes)),
+                            "after": cursor,
+                            "query": f"created_at:>={since}",
+                        }},
+                        timeout=20,
+                    )
+                    trend_response.raise_for_status()
+                    trend_payload = trend_response.json()
+                except requests.RequestException:
+                    # GraphQL 本身不可达（超时、限流或 HTTP 错误）时，同样尝试
+                    # REST 的只读最小字段；否则旧汇总会一直存在却无法补齐趋势。
+                    trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, since, summary["currency_code"])
+                    has_next_page = rest_truncated
+                    break
                 trend_errors = trend_payload.get("errors") or trend_payload.get("data", {}).get("errors")
                 trend_orders = (trend_payload.get("data") or {}).get("orders")
                 if trend_errors or not isinstance(trend_orders, dict):
