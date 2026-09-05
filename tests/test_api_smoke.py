@@ -16,7 +16,7 @@ def main() -> None:
     readiness = client.get("/v1/integrations/shopify/readiness")
     assert readiness.status_code == 200, readiness.get_data(as_text=True)
     assert readiness.json["state"] in {"configuration_required", "ready_to_authorize"}
-    assert "partnerDevelopment" in SHOPIFY_SUMMARY_QUERY
+    assert "partnerDevelopment" in SHOPIFY_SUMMARY_QUERY and "publicDisplayName" in SHOPIFY_SUMMARY_QUERY
     invalid = client.post("/v1/chat", json={})
     assert invalid.status_code == 400, invalid.get_data(as_text=True)
     answer = _format_agent_answer({
