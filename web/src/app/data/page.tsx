@@ -46,6 +46,8 @@ export default function DataPage() {
     if (response.ok) rememberShopifyConnection(data.connection ?? null);
   }
   useEffect(() => {
+    const cached = JSON.parse(localStorage.getItem(SHOPIFY_SUMMARY_CACHE_KEY) ?? "null");
+    if (cached?.connection?.summary && Date.now() - cached.cached_at < 86_400_000) setShopifyConnection(cached.connection);
     const token = sessionStorage.getItem("revenueops_access_token") ?? "";
     setAccessToken(token);
     if (!API_BASE_URL) return;
