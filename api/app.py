@@ -36,7 +36,7 @@ query RevenueOpsInitialSummary {
   }
 }
 """
-SHOPIFY_TREND_PAGE_SIZE = 250
+SHOPIFY_TREND_PAGE_SIZE = 50
 SHOPIFY_TREND_MAX_ORDERS = 1_000
 SHOPIFY_ORDER_TREND_QUERY = """
 query RevenueOpsOrderTrend($first: Int!, $after: String, $query: String!) {
@@ -254,7 +254,7 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
-        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider})
+        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1"})
 
     @app.route("/v1/integrations/shopify/readiness", methods=["GET", "OPTIONS"])
     def shopify_readiness() -> Any:
@@ -401,6 +401,8 @@ def create_app() -> Flask:
         """同步计数与近 30 天订单日汇总，不保存订单、客户或设备级数据。"""
         if request.method == "OPTIONS":
             return "", 204
+        stage = "summary"
+        graphql_reason = ""
         try:
             session = _require_session()
             from src.agent.merchant_connection_store import get_shopify_connection_for_sync, save_shopify_sync_summary
@@ -431,6 +433,7 @@ def create_app() -> Flask:
             cursor: str | None = None
             has_next_page = True
             while has_next_page and len(trend_nodes) < SHOPIFY_TREND_MAX_ORDERS:
+                stage = "trend_graphql"
                 try:
                     trend_response = requests.post(
                         f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/graphql.json",
@@ -447,14 +450,23 @@ def create_app() -> Flask:
                 except requests.RequestException:
                     # GraphQL 本身不可达（超时、限流或 HTTP 错误）时，同样尝试
                     # REST 的只读最小字段；否则旧汇总会一直存在却无法补齐趋势。
+                    stage = "trend_rest"
+                    graphql_reason = "transport"
                     trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, since, summary["currency_code"])
                     has_next_page = rest_truncated
                     break
-                trend_errors = trend_payload.get("errors") or trend_payload.get("data", {}).get("errors")
+                trend_errors = trend_payload.get("errors") or (trend_payload.get("data") or {}).get("errors")
                 trend_orders = (trend_payload.get("data") or {}).get("orders")
                 if trend_errors or not isinstance(trend_orders, dict):
                     # 个别店铺/API 版本可能拒绝 GraphQL 的趋势字段；改用同一
                     # read_orders 权限下的 REST 最小字段，不阻断已授权的汇总同步。
+                    known_codes = {"ACCESS_DENIED", "THROTTLED", "MAX_COST_EXCEEDED", "GRAPHQL_VALIDATION_FAILED"}
+                    graphql_reason = ",".join(sorted({
+                        str((error.get("extensions") or {}).get("code"))
+                        for error in (trend_errors if isinstance(trend_errors, list) else [])
+                        if isinstance(error, dict) and (error.get("extensions") or {}).get("code") in known_codes
+                    })) or "query_rejected"
+                    stage = "trend_rest"
                     trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, since, summary["currency_code"])
                     has_next_page = rest_truncated
                     break
@@ -472,9 +484,15 @@ def create_app() -> Flask:
             return jsonify({"connection": {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        except requests.RequestException:
-            app.logger.exception("Shopify aggregate sync request failed")
-            return jsonify({"error": "无法从 Shopify 同步汇总数据，请稍后重试"}), 502
+        except requests.RequestException as exc:
+            # Log only allowlisted diagnostics, never the exception, URL, token or response body.
+            status = exc.response.status_code if exc.response is not None else None
+            reason = "timeout" if isinstance(exc, requests.Timeout) else "request_failed"
+            code = f"{stage}:{status or reason}"
+            if graphql_reason:
+                code += f";graphql:{graphql_reason}"
+            app.logger.warning("Shopify sync failed: %s", code)
+            return jsonify({"error": f"Shopify 同步失败（{code}），请保留此错误编号用于排查。", "error_code": code}), 502
         except RuntimeError:
             app.logger.exception("Shopify aggregate sync failed")
             return jsonify({"error": "同步服务暂不可用，请重新授权后重试"}), 503
