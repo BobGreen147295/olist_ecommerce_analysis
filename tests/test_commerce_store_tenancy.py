@@ -14,8 +14,10 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as directory:
         previous_url = os.environ.get("DATABASE_URL")
         previous_hash_key = os.environ.get("CUSTOMER_ID_HASH_KEY")
+        previous_session_key = os.environ.get("SESSION_SIGNING_KEY")
         os.environ["DATABASE_URL"] = f"sqlite:///{Path(directory) / 'commerce.db'}"
-        os.environ["CUSTOMER_ID_HASH_KEY"] = "test-customer-id-hash-key-at-least-32-chars"
+        os.environ.pop("CUSTOMER_ID_HASH_KEY", None)
+        os.environ["SESSION_SIGNING_KEY"] = "test-session-signing-key-at-least-32-chars"
         try:
             mapping = {"order_id": "id", "ordered_at": "ordered", "total_amount": "amount", "customer_id": "customer"}
             defaults = {"currency": "USD", "market": "US", "timezone": "UTC"}
@@ -48,6 +50,10 @@ def main() -> None:
                 os.environ.pop("CUSTOMER_ID_HASH_KEY", None)
             else:
                 os.environ["CUSTOMER_ID_HASH_KEY"] = previous_hash_key
+            if previous_session_key is None:
+                os.environ.pop("SESSION_SIGNING_KEY", None)
+            else:
+                os.environ["SESSION_SIGNING_KEY"] = previous_session_key
     print("Commerce data tenancy tests passed")
 
 

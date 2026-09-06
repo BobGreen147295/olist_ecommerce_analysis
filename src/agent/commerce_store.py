@@ -163,11 +163,14 @@ def _pseudonymize_customer_ids(orders: pd.DataFrame, owner: str) -> None:
     non_empty = orders["customer_id"].ne("")
     if not non_empty.any():
         return
-    key = os.environ.get("CUSTOMER_ID_HASH_KEY", "").encode("utf-8")
+    # The session signing secret is already mandatory for the authenticated API.
+    # A fixed purpose prefix provides domain separation if a dedicated hash key is
+    # not configured yet.
+    key = (os.environ.get("CUSTOMER_ID_HASH_KEY") or os.environ.get("SESSION_SIGNING_KEY", "")).encode("utf-8")
     if len(key) < 32:
-        raise RuntimeError("真实客户标识导入需要配置 CUSTOMER_ID_HASH_KEY")
+        raise RuntimeError("真实客户标识导入需要配置至少 32 位的服务端签名密钥")
     orders.loc[non_empty, "customer_id"] = orders.loc[non_empty, "customer_id"].map(
-        lambda value: hmac.new(key, f"{owner}\0{value}".encode("utf-8"), hashlib.sha256).hexdigest()
+        lambda value: hmac.new(key, f"revenueops.customer-id.v1\0{owner}\0{value}".encode("utf-8"), hashlib.sha256).hexdigest()
     )
 
 
