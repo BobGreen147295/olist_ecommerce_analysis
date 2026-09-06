@@ -31,6 +31,14 @@ def main() -> None:
             assert customer_ids[0] != "shared-customer"
             assert customer_ids[1] != "shared-customer"
             assert customer_ids[0] != customer_ids[1]
+            try:
+                import_order_csv(
+                    b"id,ordered,amount,customer_email\nc-1,2026-09-03T00:00:00Z,30,person@example.com\n",
+                    "Unsafe", {**mapping, "customer_id": "customer_email"}, "merchant-a", defaults,
+                )
+                raise AssertionError("email column must not be accepted as a customer identifier")
+            except ValueError as exc:
+                assert "匿名稳定 ID" in str(exc)
         finally:
             if previous_url is None:
                 os.environ.pop("DATABASE_URL", None)

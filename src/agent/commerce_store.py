@@ -36,6 +36,7 @@ _CONSENT_VALUES = {
     "false": "denied", "no": "denied", "n": "denied", "0": "denied", "unsubscribed": "denied",
     "denied": "denied", "opted_out": "denied", "opt-out": "denied",
 }
+_PII_COLUMN_TOKENS = ("email", "phone", "mobile", "address", "姓名", "邮箱", "电话", "地址", "name")
 
 
 def _now() -> str:
@@ -215,6 +216,12 @@ def _normalize_orders(
     missing_columns = [column for column in mapping.values() if column and column not in frame.columns]
     if missing_columns:
         raise ValueError(f"映射列不存在：{', '.join(missing_columns)}")
+    customer_column = mapping.get("customer_id", "")
+    if customer_column:
+        if any(token in customer_column.lower() for token in _PII_COLUMN_TOKENS):
+            raise ValueError("客户标识只能映射匿名稳定 ID，不能映射邮箱、电话、姓名或地址列")
+        if _column_text(frame, customer_column).str.contains("@", regex=False).any():
+            raise ValueError("客户标识列疑似包含邮箱；请在导出前替换为匿名稳定 ID")
 
     default_currency = _normalize_currency(defaults.get("currency", ""))
     default_market = _normalize_market(defaults.get("market", "GLOBAL"))
