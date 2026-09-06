@@ -19,10 +19,10 @@ def main() -> None:
         os.environ.pop("CUSTOMER_ID_HASH_KEY", None)
         os.environ["SESSION_SIGNING_KEY"] = "test-session-signing-key-at-least-32-chars"
         try:
-            mapping = {"order_id": "id", "ordered_at": "ordered", "total_amount": "amount", "customer_id": "customer"}
+            mapping = {"order_id": "id", "ordered_at": "ordered", "total_amount": "amount", "customer_id": "customer", "marketing_consent": "consent"}
             defaults = {"currency": "USD", "market": "US", "timezone": "UTC"}
-            import_order_csv(b"id,ordered,amount,customer\na-1,2026-09-01T00:00:00Z,10,shared-customer\n", "Merchant A", mapping, "merchant-a", defaults)
-            import_order_csv(b"id,ordered,amount,customer\nb-1,2026-09-02T00:00:00Z,20,shared-customer\n", "Merchant B", mapping, "merchant-b", defaults)
+            import_order_csv(b"id,ordered,amount,customer,consent\na-1,2026-09-01T00:00:00Z,10,shared-customer,granted\n", "Merchant A", mapping, "merchant-a", defaults)
+            import_order_csv(b"id,ordered,amount,customer,consent\nb-1,2026-09-02T00:00:00Z,20,shared-customer,granted\n", "Merchant B", mapping, "merchant-b", defaults)
             assert get_connected_data_health("merchant-a")["source"]["display_name"] == "Merchant A"
             assert get_connected_data_health("merchant-b")["source"]["display_name"] == "Merchant B"
             signal = get_reactivation_signal("merchant-a")
@@ -37,7 +37,7 @@ def main() -> None:
             assert customer_ids[0] != customer_ids[1]
             try:
                 import_order_csv(
-                    b"id,ordered,amount,customer_email\nc-1,2026-09-03T00:00:00Z,30,person@example.com\n",
+                    b"id,ordered,amount,customer_email,consent\nc-1,2026-09-03T00:00:00Z,30,person@example.com,granted\n",
                     "Unsafe", {**mapping, "customer_id": "customer_email"}, "merchant-a", defaults,
                 )
                 raise AssertionError("email column must not be accepted as a customer identifier")
