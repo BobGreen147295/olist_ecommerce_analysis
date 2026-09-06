@@ -132,6 +132,7 @@ export default function DataPage() {
     const form = new FormData(); form.append("file", csvFile);
     const response = await fetch(`${API_BASE_URL}/v1/data-sources/csv/preview`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` }, body: form });
     const data = await response.json().catch(() => ({})); setIsCsvBusy(false);
+    if (response.status === 401) { sessionStorage.removeItem("revenueops_access_token"); setAccessToken(""); setCsvMessage("登录已失效，请在此重新登录后继续检查安全文件。"); return; }
     if (!response.ok) { setCsvMessage(data.error ?? "无法读取 CSV 结构。"); return; }
     const columns = Array.isArray(data.columns) ? data.columns : [];
     setCsvPreview({ columns, row_count: Number(data.row_count ?? 0) });
@@ -153,6 +154,7 @@ export default function DataPage() {
     form.append("mapping", JSON.stringify(csvMapping)); form.append("defaults", JSON.stringify({ currency: "USD", market: "GLOBAL", timezone: "UTC" }));
     const response = await fetch(`${API_BASE_URL}/v1/data-sources/csv/import`, { method: "POST", headers: { Authorization: `Bearer ${accessToken}` }, body: form });
     const data = await response.json().catch(() => ({})); setIsCsvBusy(false);
+    if (response.status === 401) { sessionStorage.removeItem("revenueops_access_token"); setAccessToken(""); setCsvMessage("登录已失效，请在此重新登录后继续导入安全文件。"); return; }
     if (!response.ok) { setCsvMessage(data.error ?? "导入失败，请检查字段映射。"); return; }
     setCsvMessage(`已导入 ${Number(data.source?.record_count ?? 0).toLocaleString()} 笔有效订单；客户标识已在服务端匿名化。`);
     setCsvFile(null); setCsvPreview(null);
