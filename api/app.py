@@ -25,7 +25,7 @@ from flask import Flask, jsonify, redirect, request
 
 MAX_MESSAGE_LENGTH = 1_500
 DEFAULT_ORIGINS = "https://olist-revenueops.pages.dev,http://localhost:3000"
-SHOPIFY_SCOPES = ("read_orders", "read_all_orders", "read_customers", "read_products", "read_inventory")
+SHOPIFY_SCOPES = ("read_orders", "read_customers", "read_products", "read_inventory")
 SHOPIFY_API_VERSION = "2026-07"
 SHOPIFY_SUMMARY_QUERY = """
 query RevenueOpsInitialSummary {
@@ -516,10 +516,10 @@ def create_app() -> Flask:
                 "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
                 "is_development_store": bool((shop.get("plan") or {}).get("partnerDevelopment")) or (shop.get("plan") or {}).get("publicDisplayName") == "Development",
             }
-            # read_all_orders is requested for a real historical baseline. The cap is
-            # explicit: if Shopify returns more than this, we refuse a partial pilot
-            # import rather than silently treating it as the complete customer base.
-            since = "1970-01-01"
+            # The standard read_orders grant covers the most recent 60 days. Full
+            # history requires a separately approved Shopify access request, so we
+            # never imply that this pilot sync is a complete historical baseline.
+            since = (datetime.now(timezone.utc) - timedelta(days=60)).date().isoformat()
             trend_nodes: list[dict[str, Any]] = []
             cursor: str | None = None
             has_next_page = True
