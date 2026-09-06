@@ -145,6 +145,16 @@ def _shopify_signal_draft(summary: Any, signal_id: str) -> dict[str, Any]:
     }
 
 
+def _reactivation_signal_draft(signal: Any) -> dict[str, Any]:
+    if not isinstance(signal, dict) or signal.get("state") != "ready":
+        raise ValueError("当前试点数据尚未满足创建审核草案的条件")
+    return {
+        "priority": "P1", "title": "高价值沉默客户再激活试点", "actions": ["人工确认优惠、渠道与本地合规口径", "由获授权的执行渠道生成匿名对照组与实验组", "导入渠道回执后计算增量收入"],
+        "audience": f"{int(signal['eligible_customers'])} 位已同意营销的匿名客户（不生成名单）", "channel": "待人工确认", "budget": None, "duration_days": 14,
+        "expected_metric": "对照组增量净收入", "expected_effect": "待通过小范围对照实验验证，不代表收入承诺", "consent_basis": "仅限已授予营销同意的匿名客户；本草案不触达客户",
+    }
+
+
 def _shopify_rest_order_trend(connection: dict[str, Any], since: str, currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
     """GraphQL 趋势不可用时，以 REST 最小订单字段生成瞬时节点并立即聚合。"""
     url = f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
@@ -632,6 +642,21 @@ def create_app() -> Flask:
         except Exception:
             app.logger.exception("Reactivation signal failed")
             return jsonify({"error": "机会信号暂不可用，请稍后重试"}), 503
+
+    @app.route("/v1/tasks/from-reactivation-signal", methods=["POST", "OPTIONS"])
+    def reactivation_signal_draft() -> Any:
+        if request.method == "OPTIONS": return "", 204
+        try:
+            from src.agent.commerce_store import get_reactivation_signal
+            from src.agent.task_store import create_task
+            session = _require_session()
+            signal = get_reactivation_signal(session["username"])
+            task = create_task(_reactivation_signal_draft(signal), source_diagnosis={"source": "consented_reactivation_aggregate"}, owner=session["username"])
+            return jsonify({"task": task}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
     @app.route("/v1/data-sources/csv/preview", methods=["POST", "OPTIONS"])
     def preview_csv_source() -> Any:
