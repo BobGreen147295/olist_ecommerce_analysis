@@ -27,6 +27,7 @@ def main() -> None:
             assert get_connected_data_health("merchant-b")["source"]["display_name"] == "Merchant B"
             signal = get_reactivation_signal("merchant-a")
             assert signal and "customer_id" not in signal and "eligible_customers" in signal
+            assert signal["coverage"] == {"imported_orders": 1, "identified_orders": 1, "consented_orders": 1}
             connection = sqlite3.connect(Path(directory) / "commerce.db")
             try:
                 customer_ids = [row[0] for row in connection.execute("SELECT customer_id FROM commerce_orders ORDER BY order_id")]

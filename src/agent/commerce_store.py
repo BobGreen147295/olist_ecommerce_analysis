@@ -439,13 +439,30 @@ def get_reactivation_signal(owner: str, inactive_days: int = 90) -> dict[str, An
     conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
+        cursor.execute(
+            f"""SELECT COUNT(*),
+                       SUM(CASE WHEN customer_id IS NOT NULL THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN customer_id IS NOT NULL AND marketing_consent = 'granted' THEN 1 ELSE 0 END)
+                FROM commerce_orders WHERE source_id = {placeholder}""",
+            (source["source_id"],),
+        )
+        imported_orders, identified_orders, consented_orders = cursor.fetchone()
         cursor.execute(f"SELECT customer_id, ordered_at, total_amount FROM commerce_orders WHERE source_id = {placeholder} AND customer_id IS NOT NULL AND marketing_consent = 'granted'", (source["source_id"],))
         rows = cursor.fetchall(); cursor.close()
     finally:
         conn.close()
     frame = pd.DataFrame(rows, columns=["customer_id", "ordered_at", "total_amount"])
+    coverage = {
+        "imported_orders": int(imported_orders or 0),
+        "identified_orders": int(identified_orders or 0),
+        "consented_orders": int(consented_orders or 0),
+    }
     if frame.empty:
-        return {"state": "not_ready", "message": "需要匿名客户 ID 与已授予的营销同意状态，才能计算试点机会。"}
+        return {
+            "state": "not_ready",
+            "message": "当前导入中没有同时具备匿名客户 ID 与已授予营销同意状态的订单，不能创建召回试点。",
+            "coverage": coverage,
+        }
     frame["ordered_at"] = pd.to_datetime(frame["ordered_at"], errors="coerce", utc=True)
     frame["total_amount"] = pd.to_numeric(frame["total_amount"], errors="coerce")
     frame = frame.dropna()
@@ -453,4 +470,4 @@ def get_reactivation_signal(owner: str, inactive_days: int = 90) -> dict[str, An
     cutoff = frame["ordered_at"].max() - pd.Timedelta(days=inactive_days)
     high_value = by_customer["lifetime_sales"] >= by_customer["lifetime_sales"].quantile(.75)
     eligible = by_customer[high_value & (by_customer["last_order"] <= cutoff)]
-    return {"state": "ready", "inactive_days": inactive_days, "eligible_customers": int(len(eligible)), "eligible_historical_sales": round(float(eligible["lifetime_sales"].sum()), 2), "currency": currencies[0], "cutoff_date": cutoff.strftime("%Y-%m-%d"), "message": "仅为需人工审核的聚合机会信号；未创建名单或客户触达。"}
+    return {"state": "ready", "inactive_days": inactive_days, "eligible_customers": int(len(eligible)), "eligible_historical_sales": round(float(eligible["lifetime_sales"].sum()), 2), "currency": currencies[0], "cutoff_date": cutoff.strftime("%Y-%m-%d"), "message": "仅为需人工审核的聚合机会信号；未创建名单或客户触达。", "coverage": coverage}
