@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from .task_store import _connect_database, _use_database
 
 
-_TOKEN_TTL_MINUTES = 30
+_TOKEN_TTL_MINUTES = 8 * 60
 
 
 def _now() -> str:
