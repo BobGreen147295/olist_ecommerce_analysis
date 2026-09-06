@@ -717,7 +717,6 @@ with tab_connections:
             try:
                 preview = preview_order_csv(uploaded_orders.getvalue())
                 st.success(f"Read {preview['row_count']:,} rows and detected {len(preview['columns'])} columns.")
-                st.dataframe(pd.DataFrame(preview["sample"]), use_container_width=True, hide_index=True)
                 columns = preview["columns"]
                 mapping_options = ["", *columns]
 
@@ -747,7 +746,7 @@ with tab_connections:
                     with map_right:
                         customer_id_column = st.selectbox(
                             "Customer ID (optional)", mapping_options,
-                            index=suggested_index(("customer_id", "customer", "customer_email")),
+                            index=suggested_index(("customer_id", "customer")),
                         )
                         status_column = st.selectbox(
                             "Order status (optional)", mapping_options, index=suggested_index(("status", "financial_status", "order_status"))

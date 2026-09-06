@@ -8,6 +8,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -144,15 +147,27 @@ def _read_csv(content: bytes) -> pd.DataFrame:
 
 
 def preview_order_csv(content: bytes) -> dict[str, Any]:
-    """返回上传文件的安全预览，不持久化原文件。"""
+    """返回文件结构，不持久化或回显订单内容。"""
     frame = _read_csv(content)
     if len(frame) > MAX_IMPORT_ROWS:
         raise ValueError(f"单次最多导入 {MAX_IMPORT_ROWS:,} 行订单数据")
     return {
         "columns": [str(column) for column in frame.columns],
         "row_count": int(len(frame)),
-        "sample": frame.head(5).fillna("").to_dict(orient="records"),
     }
+
+
+def _pseudonymize_customer_ids(orders: pd.DataFrame, owner: str) -> None:
+    """Replace uploaded customer identifiers before they can reach storage."""
+    non_empty = orders["customer_id"].ne("")
+    if not non_empty.any():
+        return
+    key = os.environ.get("CUSTOMER_ID_HASH_KEY", "").encode("utf-8")
+    if len(key) < 32:
+        raise RuntimeError("真实客户标识导入需要配置 CUSTOMER_ID_HASH_KEY")
+    orders.loc[non_empty, "customer_id"] = orders.loc[non_empty, "customer_id"].map(
+        lambda value: hmac.new(key, f"{owner}\0{value}".encode("utf-8"), hashlib.sha256).hexdigest()
+    )
 
 
 def _column_text(frame: pd.DataFrame, column: str | None, default: str = "") -> pd.Series:
@@ -262,6 +277,7 @@ def import_order_csv(
     if len(raw) > MAX_IMPORT_ROWS:
         raise ValueError(f"单次最多导入 {MAX_IMPORT_ROWS:,} 行订单数据")
     normalized, rejected_count = _normalize_orders(raw, mapping, defaults or {"currency": "USD"})
+    _pseudonymize_customer_ids(normalized, created_by)
     source_id = f"csv_{uuid.uuid4().hex[:12]}"
     created_at = _now()
     coverage_start = normalized["ordered_at"].min()

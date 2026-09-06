@@ -1,5 +1,6 @@
 import os
 import sys
+from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,11 @@ def main() -> None:
     assert "partnerDevelopment" in SHOPIFY_SUMMARY_QUERY and "publicDisplayName" in SHOPIFY_SUMMARY_QUERY
     invalid = client.post("/v1/chat", json={})
     assert invalid.status_code == 400, invalid.get_data(as_text=True)
+    csv_preview = client.post(
+        "/v1/data-sources/csv/preview",
+        data={"file": (BytesIO(b"id,ordered,amount\n1,2026-09-01,10\n"), "orders.csv")},
+    )
+    assert csv_preview.status_code == 401, csv_preview.get_data(as_text=True)
     answer = _format_agent_answer({
         "diagnosis": {"findings": [{"evidence": ["近 6 个月销售额环比下降 12%"]}]},
         "action_drafts": [{"title": "挽回流失风险客户", "actions": ["先选择 200 名客户", "设置对照组"]}],

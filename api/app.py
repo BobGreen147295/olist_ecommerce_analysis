@@ -10,6 +10,7 @@ import os
 import re
 import hashlib
 import hmac
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -619,6 +620,54 @@ def create_app() -> Flask:
         except Exception:
             app.logger.exception("Data health lookup failed")
             return jsonify({"storage_mode": "unavailable", "connected_source": None}), 503
+
+    @app.route("/v1/data-sources/csv/preview", methods=["POST", "OPTIONS"])
+    def preview_csv_source() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            _require_session()
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        try:
+            uploaded = request.files.get("file")
+            if not uploaded or not uploaded.filename:
+                raise ValueError("请选择订单 CSV 文件")
+            from src.agent.commerce_store import preview_order_csv
+            return jsonify(preview_order_csv(uploaded.read()))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            app.logger.exception("CSV preview failed")
+            return jsonify({"error": "数据服务暂不可用，请稍后重试"}), 503
+
+    @app.route("/v1/data-sources/csv/import", methods=["POST", "OPTIONS"])
+    def import_csv_source() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        try:
+            uploaded = request.files.get("file")
+            if not uploaded or not uploaded.filename:
+                raise ValueError("请选择订单 CSV 文件")
+            mapping = json.loads(request.form.get("mapping", "{}"))
+            defaults = json.loads(request.form.get("defaults", "{}"))
+            if not isinstance(mapping, dict) or not isinstance(defaults, dict):
+                raise ValueError("字段映射或默认值格式无效")
+            from src.agent.commerce_store import import_order_csv
+            result = import_order_csv(
+                uploaded.read(), request.form.get("display_name", uploaded.filename), mapping,
+                session["username"], defaults,
+            )
+            return jsonify({"source": result}), 201
+        except (ValueError, json.JSONDecodeError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError as exc:
+            app.logger.exception("CSV import failed")
+            return jsonify({"error": str(exc)}), 503
 
     return app
 
