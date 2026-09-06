@@ -93,6 +93,20 @@ def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncate
     }
 
 
+def _shopify_opportunity_readiness(summary: Any) -> dict[str, str]:
+    """仅凭已持久化的安全汇总判断是否可进入真实机会建模。"""
+    if not isinstance(summary, dict) or not isinstance(summary.get("order_trend"), dict):
+        return {"state": "trend_required", "message": "尚未同步订单趋势，不能评估真实机会。"}
+    if summary.get("is_development_store"):
+        return {"state": "development_store", "message": "当前连接的是 Shopify 开发店：数据仅用于验证同步，不能解锁真实机会建模或客户触达。"}
+    trend = summary["order_trend"]
+    orders = int(trend.get("orders_scanned") or 0)
+    days = trend.get("days") if isinstance(trend.get("days"), list) else []
+    if orders < 20 or len(days) < 3:
+        return {"state": "insufficient_data", "message": f"当前仅 {orders} 笔订单、{len(days)} 个有订单的日期；达到 20 笔订单且覆盖 3 个日期后，才可进入真实机会建模。"}
+    return {"state": "ready", "message": "已满足基础数据门槛；确认分析口径后可进入真实机会建模。"}
+
+
 def _shopify_rest_order_trend(connection: dict[str, Any], since: str, currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
     """GraphQL 趋势不可用时，以 REST 最小订单字段生成瞬时节点并立即聚合。"""
     url = f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
@@ -392,6 +406,8 @@ def create_app() -> Flask:
             if connection and isinstance(connection.get("summary"), dict) and "order_trend" not in connection["summary"]:
                 sync_shopify()
                 connection = get_shopify_connection_status(session["username"])
+            if connection:
+                connection["opportunity_readiness"] = _shopify_opportunity_readiness(connection.get("summary"))
             return jsonify({"connection": connection})
         except (ValueError, RuntimeError):
             return jsonify({"error": "登录已失效，请重新登录"}), 401
@@ -482,7 +498,9 @@ def create_app() -> Flask:
                 trend_nodes, 30, has_next_page or len(trend_nodes) >= SHOPIFY_TREND_MAX_ORDERS,
             )
             result = save_shopify_sync_summary(connection["workspace_id"], connection["shop_domain"], summary)
-            return jsonify({"connection": {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}})
+            synced_connection = {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}
+            synced_connection["opportunity_readiness"] = _shopify_opportunity_readiness(synced_connection.get("summary"))
+            return jsonify({"connection": synced_connection})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except requests.RequestException as exc:

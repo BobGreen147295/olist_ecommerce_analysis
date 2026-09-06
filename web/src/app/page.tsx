@@ -11,7 +11,8 @@ type ShopifySummary = { orders: number; customers: number; products: number; inv
 type ShopifyDeltas = { orders: number; customers: number; products: number; inventory_items: number };
 type ShopifyOrderTrend = { window_days: number; orders_scanned: number; truncated: boolean; days: { date: string; orders: number; gross_sales: number; net_sales: number; refunds: number }[]; totals: { orders: number; gross_sales: number; net_sales: number; refunds: number }; refund_attribution: string };
 type ShopifySummaryWithTrend = ShopifySummary & { order_trend?: ShopifyOrderTrend };
-type ShopifyConnection = { shop_domain: string; status: "connected" | "synced"; last_synced_at: string | null; summary: ShopifySummaryWithTrend | null; comparison?: { previous_synced_at: string; deltas: ShopifyDeltas } | null };
+type ShopifyOpportunityReadiness = { state: "trend_required" | "development_store" | "insufficient_data" | "ready"; message: string };
+type ShopifyConnection = { shop_domain: string; status: "connected" | "synced"; last_synced_at: string | null; summary: ShopifySummaryWithTrend | null; comparison?: { previous_synced_at: string; deltas: ShopifyDeltas } | null; opportunity_readiness?: ShopifyOpportunityReadiness };
 
 function deltaLabel(value: number | undefined, fallback: string) {
   if (value === undefined) return fallback;
@@ -47,8 +48,8 @@ export default function OverviewPage() {
   const deltas = shopify?.comparison?.deltas;
   const trend = summary?.order_trend;
   const isDevelopmentStore = Boolean(summary?.is_development_store);
-  const realOpportunityReady = Boolean(!isDevelopmentStore && trend && trend.orders_scanned >= 20 && trend.days.length >= 3);
-  const realOpportunityGate = isDevelopmentStore ? "当前连接的是 Shopify 开发店：数据仅用于验证同步，不能解锁真实机会建模或客户触达。" : !trend ? "尚未同步订单趋势，不能评估真实机会。" : realOpportunityReady ? "已满足基础数据门槛；确认分析口径后可进入真实机会建模。" : `当前仅 ${trend.orders_scanned} 笔订单、${trend.days.length} 个有订单的日期；达到 20 笔订单且覆盖 3 个日期后，才可进入真实机会建模。`;
+  const realOpportunityReady = shopify?.opportunity_readiness?.state === "ready";
+  const realOpportunityGate = shopify?.opportunity_readiness?.message ?? (isDevelopmentStore ? "当前连接的是 Shopify 开发店：数据仅用于验证同步，不能解锁真实机会建模或客户触达。" : "正在获取真实机会建模状态。");
   const currency = summary?.currency_code ?? "USD";
   const money = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
   return <main className="page-content">
