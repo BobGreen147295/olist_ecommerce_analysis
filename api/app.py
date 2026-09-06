@@ -11,6 +11,8 @@ import re
 import hashlib
 import hmac
 import json
+import csv
+from io import StringIO
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -23,7 +25,7 @@ from flask import Flask, jsonify, redirect, request
 
 MAX_MESSAGE_LENGTH = 1_500
 DEFAULT_ORIGINS = "https://olist-revenueops.pages.dev,http://localhost:3000"
-SHOPIFY_SCOPES = ("read_orders", "read_customers", "read_products", "read_inventory")
+SHOPIFY_SCOPES = ("read_orders", "read_all_orders", "read_customers", "read_products", "read_inventory")
 SHOPIFY_API_VERSION = "2026-07"
 SHOPIFY_SUMMARY_QUERY = """
 query RevenueOpsInitialSummary {
@@ -43,14 +45,34 @@ SHOPIFY_ORDER_TREND_QUERY = """
 query RevenueOpsOrderTrend($first: Int!, $after: String, $query: String!) {
   orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT) {
     nodes {
+      id
       createdAt
       totalPriceSet { shopMoney { amount currencyCode } }
       currentTotalPriceSet { shopMoney { amount currencyCode } }
+      customer { id emailMarketingConsent { marketingState } }
     }
     pageInfo { hasNextPage endCursor }
   }
 }
 """
+
+
+def _shopify_safe_order_csv(nodes: list[dict[str, Any]]) -> bytes:
+    """Keep only an opaque Shopify customer ID and consent state before storage."""
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["order_id", "ordered_at", "total_amount", "currency", "customer_id", "marketing_consent"])
+    for node in nodes:
+        customer = node.get("customer") if isinstance(node.get("customer"), dict) else {}
+        consent = (customer.get("emailMarketingConsent") or {}).get("marketingState")
+        writer.writerow([
+            node.get("id", ""), node.get("createdAt", ""),
+            _money_amount(node.get("currentTotalPriceSet") or node.get("totalPriceSet")),
+            (((node.get("currentTotalPriceSet") or node.get("totalPriceSet") or {}).get("shopMoney") or {}).get("currencyCode") or ""),
+            customer.get("id", ""),
+            "granted" if consent == "SUBSCRIBED" else "unknown",
+        ])
+    return output.getvalue().encode("utf-8")
 
 
 def _money_amount(value: Any) -> Decimal:
@@ -494,7 +516,10 @@ def create_app() -> Flask:
                 "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
                 "is_development_store": bool((shop.get("plan") or {}).get("partnerDevelopment")) or (shop.get("plan") or {}).get("publicDisplayName") == "Development",
             }
-            since = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+            # read_all_orders is requested for a real historical baseline. The cap is
+            # explicit: if Shopify returns more than this, we refuse a partial pilot
+            # import rather than silently treating it as the complete customer base.
+            since = "1970-01-01"
             trend_nodes: list[dict[str, Any]] = []
             cursor: str | None = None
             has_next_page = True
@@ -546,6 +571,20 @@ def create_app() -> Flask:
             summary["order_trend"] = _shopify_order_trend(
                 trend_nodes, 30, has_next_page or len(trend_nodes) >= SHOPIFY_TREND_MAX_ORDERS,
             )
+            if has_next_page or len(trend_nodes) >= SHOPIFY_TREND_MAX_ORDERS:
+                summary["pilot_order_sync"] = {"state": "coverage_limit", "message": "订单量超过当前安全同步上限；未导入不完整的客户历史。"}
+            else:
+                from src.agent.commerce_store import import_order_csv
+                imported = import_order_csv(
+                    _shopify_safe_order_csv(trend_nodes), "Shopify 匿名订单同步",
+                    {"order_id": "order_id", "ordered_at": "ordered_at", "total_amount": "total_amount", "currency": "currency", "customer_id": "customer_id", "marketing_consent": "marketing_consent"},
+                    session["username"], {"currency": summary["currency_code"] or "USD", "market": "GLOBAL", "timezone": "UTC"},
+                )
+                summary["pilot_order_sync"] = {
+                    "state": "ready", "orders_synced": imported["record_count"],
+                    "consented_orders": imported["consent_known_rows"],
+                    "message": "已同步匿名订单与营销同意状态；未保存客户联系方式。",
+                }
             result = save_shopify_sync_summary(connection["workspace_id"], connection["shop_domain"], summary)
             synced_connection = {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}
             synced_connection["opportunity_readiness"] = _shopify_opportunity_readiness(synced_connection.get("summary"))
