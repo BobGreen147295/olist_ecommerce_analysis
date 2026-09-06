@@ -107,6 +107,31 @@ def _shopify_opportunity_readiness(summary: Any) -> dict[str, str]:
     return {"state": "ready", "message": "已满足基础数据门槛；确认分析口径后可进入真实机会建模。"}
 
 
+def _shopify_store_opportunities(summary: Any) -> list[dict[str, Any]]:
+    """从按日安全汇总中生成店铺级信号，不返回任何订单或客户标识。"""
+    if _shopify_opportunity_readiness(summary)["state"] != "ready":
+        return []
+    trend = summary["order_trend"]
+    days = trend.get("days") if isinstance(trend.get("days"), list) else []
+    normalized = [day for day in days if isinstance(day, dict) and isinstance(day.get("date"), str)]
+    if not normalized:
+        return []
+    end = max(datetime.fromisoformat(day["date"]).date() for day in normalized)
+    recent_start, previous_start = end - timedelta(days=6), end - timedelta(days=13)
+    recent = [day for day in normalized if recent_start <= datetime.fromisoformat(day["date"]).date() <= end]
+    previous = [day for day in normalized if previous_start <= datetime.fromisoformat(day["date"]).date() < recent_start]
+    recent_net = round(sum(float(day.get("net_sales") or 0) for day in recent), 2)
+    previous_net = round(sum(float(day.get("net_sales") or 0) for day in previous), 2)
+    totals = trend.get("totals") if isinstance(trend.get("totals"), dict) else {}
+    gross_sales, refunds = float(totals.get("gross_sales") or 0), float(totals.get("refunds") or 0)
+    signals: list[dict[str, Any]] = []
+    if previous_net > 0 and recent_net < previous_net * 0.8:
+        signals.append({"id": "net_sales_decline", "title": "近 7 天净销售额下滑", "summary": f"近 7 天净销售额 {recent_net:.2f}，较此前 7 天的 {previous_net:.2f} 下降超过 20%。", "evidence": {"recent_net_sales": recent_net, "previous_net_sales": previous_net}})
+    if gross_sales > 0 and refunds / gross_sales >= 0.1:
+        signals.append({"id": "refund_pressure", "title": "退款/订单调整占比偏高", "summary": f"近 30 天退款/订单调整额 {refunds:.2f}，占销售额 {refunds / gross_sales:.1%}。", "evidence": {"gross_sales": round(gross_sales, 2), "refunds": round(refunds, 2)}})
+    return signals
+
+
 def _shopify_rest_order_trend(connection: dict[str, Any], since: str, currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
     """GraphQL 趋势不可用时，以 REST 最小订单字段生成瞬时节点并立即聚合。"""
     url = f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
@@ -408,6 +433,7 @@ def create_app() -> Flask:
                 connection = get_shopify_connection_status(session["username"])
             if connection:
                 connection["opportunity_readiness"] = _shopify_opportunity_readiness(connection.get("summary"))
+                connection["store_opportunities"] = _shopify_store_opportunities(connection.get("summary"))
             return jsonify({"connection": connection})
         except (ValueError, RuntimeError):
             return jsonify({"error": "登录已失效，请重新登录"}), 401
@@ -500,6 +526,7 @@ def create_app() -> Flask:
             result = save_shopify_sync_summary(connection["workspace_id"], connection["shop_domain"], summary)
             synced_connection = {"provider": "shopify", "shop_domain": connection["shop_domain"], **result}
             synced_connection["opportunity_readiness"] = _shopify_opportunity_readiness(synced_connection.get("summary"))
+            synced_connection["store_opportunities"] = _shopify_store_opportunities(synced_connection.get("summary"))
             return jsonify({"connection": synced_connection})
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
