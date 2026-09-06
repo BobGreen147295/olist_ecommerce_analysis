@@ -425,3 +425,32 @@ def get_connected_sales_trend(months: int = 6, owner: str | None = None) -> dict
         f"最新月 {latest['period']} 销售额 {currency} {latest['total_sales']:,.2f}，订单 {latest['total_orders']} 笔"
     )
     return {"success": True, "data": data, "summary": summary, "source": source["display_name"], "currency": currency}
+
+
+def get_reactivation_signal(owner: str, inactive_days: int = 90) -> dict[str, Any] | None:
+    """Return a consent-filtered aggregate only; never return customer identifiers."""
+    source = get_active_data_source(owner)
+    if not source:
+        return None
+    health = get_connected_data_health(owner)
+    currencies = health["currencies"] if health else []
+    if len(currencies) != 1:
+        return {"state": "not_ready", "message": "请先按单一币种导入订单，系统不会混合币种计算机会。"}
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT customer_id, ordered_at, total_amount FROM commerce_orders WHERE source_id = {placeholder} AND customer_id IS NOT NULL AND marketing_consent = 'granted'", (source["source_id"],))
+        rows = cursor.fetchall(); cursor.close()
+    finally:
+        conn.close()
+    frame = pd.DataFrame(rows, columns=["customer_id", "ordered_at", "total_amount"])
+    if frame.empty:
+        return {"state": "not_ready", "message": "需要匿名客户 ID 与已授予的营销同意状态，才能计算试点机会。"}
+    frame["ordered_at"] = pd.to_datetime(frame["ordered_at"], errors="coerce", utc=True)
+    frame["total_amount"] = pd.to_numeric(frame["total_amount"], errors="coerce")
+    frame = frame.dropna()
+    by_customer = frame.groupby("customer_id").agg(last_order=("ordered_at", "max"), lifetime_sales=("total_amount", "sum"))
+    cutoff = frame["ordered_at"].max() - pd.Timedelta(days=inactive_days)
+    high_value = by_customer["lifetime_sales"] >= by_customer["lifetime_sales"].quantile(.75)
+    eligible = by_customer[high_value & (by_customer["last_order"] <= cutoff)]
+    return {"state": "ready", "inactive_days": inactive_days, "eligible_customers": int(len(eligible)), "eligible_historical_sales": round(float(eligible["lifetime_sales"].sum()), 2), "currency": currencies[0], "cutoff_date": cutoff.strftime("%Y-%m-%d"), "message": "仅为需人工审核的聚合机会信号；未创建名单或客户触达。"}

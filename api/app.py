@@ -621,6 +621,18 @@ def create_app() -> Flask:
             app.logger.exception("Data health lookup failed")
             return jsonify({"storage_mode": "unavailable", "connected_source": None}), 503
 
+    @app.route("/v1/opportunities/reactivation", methods=["GET", "OPTIONS"])
+    def reactivation_opportunity() -> Any:
+        if request.method == "OPTIONS": return "", 204
+        try:
+            from src.agent.commerce_store import get_reactivation_signal
+            return jsonify({"signal": get_reactivation_signal(_require_session()["username"])})
+        except ValueError:
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        except Exception:
+            app.logger.exception("Reactivation signal failed")
+            return jsonify({"error": "机会信号暂不可用，请稍后重试"}), 503
+
     @app.route("/v1/data-sources/csv/preview", methods=["POST", "OPTIONS"])
     def preview_csv_source() -> Any:
         if request.method == "OPTIONS":

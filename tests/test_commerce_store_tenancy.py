@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 
 def main() -> None:
-    from src.agent.commerce_store import get_connected_data_health, import_order_csv
+    from src.agent.commerce_store import get_connected_data_health, get_reactivation_signal, import_order_csv
 
     with tempfile.TemporaryDirectory() as directory:
         previous_url = os.environ.get("DATABASE_URL")
@@ -25,6 +25,8 @@ def main() -> None:
             import_order_csv(b"id,ordered,amount,customer\nb-1,2026-09-02T00:00:00Z,20,shared-customer\n", "Merchant B", mapping, "merchant-b", defaults)
             assert get_connected_data_health("merchant-a")["source"]["display_name"] == "Merchant A"
             assert get_connected_data_health("merchant-b")["source"]["display_name"] == "Merchant B"
+            signal = get_reactivation_signal("merchant-a")
+            assert signal and "customer_id" not in signal and "eligible_customers" in signal
             connection = sqlite3.connect(Path(directory) / "commerce.db")
             try:
                 customer_ids = [row[0] for row in connection.execute("SELECT customer_id FROM commerce_orders ORDER BY order_id")]
