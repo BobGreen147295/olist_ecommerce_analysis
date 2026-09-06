@@ -132,6 +132,18 @@ def _shopify_store_opportunities(summary: Any) -> list[dict[str, Any]]:
     return signals
 
 
+def _shopify_signal_draft(summary: Any, signal_id: str) -> dict[str, Any]:
+    """把可用的店铺级信号转换为待人工审核的安全草案。"""
+    signal = next((item for item in _shopify_store_opportunities(summary) if item["id"] == signal_id), None)
+    if not signal:
+        raise ValueError("该店铺级信号当前不可创建审核草案")
+    return {
+        "priority": "P1", "title": signal["title"], "actions": ["核实店铺级信号的业务原因", "确认分析口径后再决定是否设计实验"],
+        "audience": "不适用（店铺级汇总）", "channel": "待人工确认", "budget": None, "duration_days": 7,
+        "expected_metric": "待人工确认", "expected_effect": "仅为待核实信号，不代表收入承诺", "consent_basis": "不适用：不含客户触达",
+    }
+
+
 def _shopify_rest_order_trend(connection: dict[str, Any], since: str, currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
     """GraphQL 趋势不可用时，以 REST 最小订单字段生成瞬时节点并立即聚合。"""
     url = f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
@@ -542,6 +554,27 @@ def create_app() -> Flask:
         except RuntimeError:
             app.logger.exception("Shopify aggregate sync failed")
             return jsonify({"error": "同步服务暂不可用，请重新授权后重试"}), 503
+
+    @app.route("/v1/tasks/from-shopify-signal", methods=["POST", "OPTIONS"])
+    def create_shopify_signal_task() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            signal_id = (request.get_json(silent=True) or {}).get("signal_id")
+            if not isinstance(signal_id, str):
+                raise ValueError("请选择一个店铺级信号")
+            from src.agent.merchant_connection_store import get_shopify_connection_status
+            from src.agent.task_store import create_task
+            connection = get_shopify_connection_status(session["username"])
+            summary = connection.get("summary") if connection else None
+            draft = _shopify_signal_draft(summary, signal_id)
+            task = create_task(draft, source_diagnosis={"source": "shopify_aggregate", "signal_id": signal_id}, owner=session["username"])
+            return jsonify({"task": task}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
     @app.route("/v1/chat", methods=["POST", "OPTIONS"])
     def chat() -> Any:
