@@ -612,8 +612,10 @@ def create_app() -> Flask:
         try:
             from src.agent.commerce_store import get_connected_data_health
             from src.agent.task_store import storage_mode
-
-            return jsonify({"storage_mode": storage_mode(), "connected_source": get_connected_data_health()})
+            session = _require_session()
+            return jsonify({"storage_mode": storage_mode(), "connected_source": get_connected_data_health(session["username"])})
+        except ValueError:
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
         except Exception:
             app.logger.exception("Data health lookup failed")
             return jsonify({"storage_mode": "unavailable", "connected_source": None}), 503

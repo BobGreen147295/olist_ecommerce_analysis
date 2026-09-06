@@ -106,16 +106,18 @@ def _ensure_schema() -> None:
         conn.close()
 
 
-def list_data_sources() -> list[dict[str, Any]]:
+def list_data_sources(owner: str | None = None) -> list[dict[str, Any]]:
     _ensure_schema()
-    conn, _ = _connect_database()
+    conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
-        cursor.execute(
-            """SELECT source_id, display_name, source_type, status, is_active, created_by, created_at,
-               record_count, coverage_start, coverage_end FROM commerce_data_sources
-               ORDER BY is_active DESC, created_at DESC"""
-        )
+        query = """SELECT source_id, display_name, source_type, status, is_active, created_by, created_at,
+                   record_count, coverage_start, coverage_end FROM commerce_data_sources"""
+        if owner is not None:
+            query += f" WHERE created_by = {placeholder}"
+            cursor.execute(query + " ORDER BY is_active DESC, created_at DESC", (owner,))
+        else:
+            cursor.execute(query + " ORDER BY is_active DESC, created_at DESC")
         rows = cursor.fetchall()
         cursor.close()
         fields = (
@@ -127,8 +129,8 @@ def list_data_sources() -> list[dict[str, Any]]:
         conn.close()
 
 
-def get_active_data_source() -> dict[str, Any] | None:
-    return next((source for source in list_data_sources() if source["is_active"]), None)
+def get_active_data_source(owner: str | None = None) -> dict[str, Any] | None:
+    return next((source for source in list_data_sources(owner) if source["is_active"]), None)
 
 
 def _read_csv(content: bytes) -> pd.DataFrame:
@@ -268,7 +270,7 @@ def import_order_csv(
     conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE commerce_data_sources SET is_active = FALSE")
+        cursor.execute(f"UPDATE commerce_data_sources SET is_active = FALSE WHERE created_by = {placeholder}", (created_by,))
         insert_source = (
             "INSERT INTO commerce_data_sources (source_id, display_name, source_type, status, is_active, created_by, "
             "created_at, record_count, coverage_start, coverage_end, mapping_json) "
@@ -318,9 +320,9 @@ def import_order_csv(
         conn.close()
 
 
-def get_connected_data_health() -> dict[str, Any] | None:
+def get_connected_data_health(owner: str | None = None) -> dict[str, Any] | None:
     """Return source metadata and safety-critical coverage, never raw customer data."""
-    source = get_active_data_source()
+    source = get_active_data_source(owner)
     if not source:
         return None
     conn, placeholder = _connect_database()
@@ -345,15 +347,15 @@ def get_connected_data_health() -> dict[str, Any] | None:
     }
 
 
-def get_connected_sales_trend(months: int = 6) -> dict[str, Any] | None:
+def get_connected_sales_trend(months: int = 6, owner: str | None = None) -> dict[str, Any] | None:
     """Read active-source sales trend without aggregating different currencies."""
-    source = get_active_data_source()
+    source = get_active_data_source(owner)
     if not source:
         return None
     months = int(months)
     if not 1 <= months <= 36:
         return {"success": False, "data": None, "summary": "months 必须是 1 到 36 之间的整数", "source": source["display_name"]}
-    health = get_connected_data_health()
+    health = get_connected_data_health(owner)
     currencies = health["currencies"] if health else []
     if len(currencies) != 1:
         return {
