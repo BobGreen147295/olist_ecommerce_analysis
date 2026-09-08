@@ -177,14 +177,14 @@ def _reactivation_signal_draft(signal: Any) -> dict[str, Any]:
     }
 
 
-def _shopify_rest_order_trend(connection: dict[str, Any], since: str, currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
+def _shopify_rest_order_trend(connection: dict[str, Any], currency_code: str | None) -> tuple[list[dict[str, Any]], bool]:
     """GraphQL 趋势不可用时，以 REST 最小订单字段生成瞬时节点并立即聚合。"""
     url = f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/orders.json"
     headers = {"X-Shopify-Access-Token": connection["access_token"]}
     nodes: list[dict[str, Any]] = []
     truncated = False
     params: dict[str, Any] | None = {
-        "status": "any", "created_at_min": f"{since}T00:00:00Z", "limit": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS),
+        "status": "any", "limit": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS),
         "fields": "created_at,total_price,current_total_price,currency",
     }
     while url and len(nodes) < SHOPIFY_TREND_MAX_ORDERS:
@@ -516,10 +516,8 @@ def create_app() -> Flask:
                 "currency_code": shop.get("currencyCode") if isinstance(shop.get("currencyCode"), str) else None,
                 "is_development_store": bool((shop.get("plan") or {}).get("partnerDevelopment")) or (shop.get("plan") or {}).get("publicDisplayName") == "Development",
             }
-            # The standard read_orders grant covers the most recent 60 days. Full
-            # history requires a separately approved Shopify access request, so we
-            # never imply that this pilot sync is a complete historical baseline.
-            since = (datetime.now(timezone.utc) - timedelta(days=60)).date().isoformat()
+            # Shopify has granted this app complete order-history access. Keep the
+            # query unfiltered so the server-side cap can reject partial imports.
             trend_nodes: list[dict[str, Any]] = []
             cursor: str | None = None
             has_next_page = True
@@ -532,7 +530,7 @@ def create_app() -> Flask:
                         json={"query": SHOPIFY_ORDER_TREND_QUERY, "variables": {
                             "first": min(SHOPIFY_TREND_PAGE_SIZE, SHOPIFY_TREND_MAX_ORDERS - len(trend_nodes)),
                             "after": cursor,
-                            "query": f"created_at:>={since}",
+                            "query": "",
                         }},
                         timeout=20,
                     )
@@ -543,7 +541,7 @@ def create_app() -> Flask:
                     # REST 的只读最小字段；否则旧汇总会一直存在却无法补齐趋势。
                     stage = "trend_rest"
                     graphql_reason = "transport"
-                    trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, since, summary["currency_code"])
+                    trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, summary["currency_code"])
                     has_next_page = rest_truncated
                     break
                 trend_errors = trend_payload.get("errors") or (trend_payload.get("data") or {}).get("errors")
@@ -558,7 +556,7 @@ def create_app() -> Flask:
                         if isinstance(error, dict) and (error.get("extensions") or {}).get("code") in known_codes
                     })) or "query_rejected"
                     stage = "trend_rest"
-                    trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, since, summary["currency_code"])
+                    trend_nodes, rest_truncated = _shopify_rest_order_trend(connection, summary["currency_code"])
                     has_next_page = rest_truncated
                     break
                 nodes = trend_orders.get("nodes") or []

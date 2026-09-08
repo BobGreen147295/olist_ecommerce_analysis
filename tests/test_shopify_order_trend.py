@@ -26,12 +26,17 @@ def main() -> None:
         def raise_for_status(self) -> None: pass
         def json(self) -> dict:
             return {"orders": [{"created_at": "2026-09-02T10:00:00Z", "total_price": "24.95", "current_total_price": "24.95", "currency": "USD"}]}
+    request_args: dict = {}
+    def fake_get(*args, **kwargs):
+        request_args.update(kwargs)
+        return RestResponse()
     try:
-        app_module.requests.get = lambda *args, **kwargs: RestResponse()
-        rest_nodes, truncated = _shopify_rest_order_trend({"shop_domain": "demo.myshopify.com", "access_token": "test"}, "2026-08-01", "USD")
+        app_module.requests.get = fake_get
+        rest_nodes, truncated = _shopify_rest_order_trend({"shop_domain": "demo.myshopify.com", "access_token": "test"}, "USD")
     finally:
         app_module.requests.get = original_get
     assert not truncated
+    assert "created_at_min" not in request_args["params"]
     assert _shopify_order_trend(rest_nodes, 30, truncated)["totals"] == {"orders": 1, "gross_sales": 24.95, "net_sales": 24.95, "refunds": 0.0}
     print("Shopify order trend aggregation tests passed")
 
