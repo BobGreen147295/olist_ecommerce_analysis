@@ -483,6 +483,18 @@ def create_app() -> Flask:
         except (ValueError, RuntimeError):
             return jsonify({"error": "登录已失效，请重新登录"}), 401
 
+    @app.route("/v1/integrations/shopify", methods=["DELETE", "OPTIONS"])
+    def delete_shopify_integration() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            from src.agent.merchant_connection_store import delete_shopify_connection
+            deleted = delete_shopify_connection(session["username"])
+            return jsonify({"deleted": deleted})
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+
     @app.route("/v1/integrations/shopify/sync", methods=["POST", "OPTIONS"])
     def sync_shopify() -> Any:
         """同步计数与近 30 天订单日汇总，不保存订单、客户或设备级数据。"""
@@ -742,6 +754,17 @@ def create_app() -> Flask:
         except RuntimeError as exc:
             app.logger.exception("CSV import failed")
             return jsonify({"error": str(exc)}), 503
+
+    @app.route("/v1/data-sources/orders", methods=["DELETE", "OPTIONS"])
+    def delete_order_data() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            session = _require_session()
+            from src.agent.commerce_store import delete_owner_order_data
+            return jsonify({"deleted_sources": delete_owner_order_data(session["username"])})
+        except (ValueError, RuntimeError):
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
 
     return app
 

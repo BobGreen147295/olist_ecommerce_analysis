@@ -23,10 +23,16 @@ from .task_store import _connect_database, _use_database
 
 _SHOP_DOMAIN = re.compile(r"^[a-z0-9][a-z0-9-]*\.myshopify\.com$")
 _STATE_TTL_MINUTES = 10
+_SYNC_RETENTION_DAYS = 90
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _sync_retention_cutoff() -> str:
+    """Keep only the recent aggregate history needed for trend comparisons."""
+    return (datetime.now(timezone.utc) - timedelta(days=_SYNC_RETENTION_DAYS)).isoformat(timespec="microseconds")
 
 
 _SUMMARY_COUNT_KEYS = ("orders", "customers", "products", "inventory_items")
@@ -65,7 +71,7 @@ def _cipher() -> Fernet:
 def _ensure_schema() -> None:
     if not _use_database():
         raise RuntimeError("商家连接需要配置 DATABASE_URL")
-    conn, _ = _connect_database()
+    conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -131,6 +137,10 @@ def _ensure_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_merchant_sync_runs_workspace "
             "ON merchant_sync_runs (workspace_id, provider, completed_at)"
         )
+        # OAuth state is single-use and short lived. Sync records contain only
+        # aggregates, but still expire after the documented retention window.
+        cursor.execute(f"DELETE FROM oauth_authorization_states WHERE expires_at < {placeholder}", (_now(),))
+        cursor.execute(f"DELETE FROM merchant_sync_runs WHERE completed_at < {placeholder}", (_sync_retention_cutoff(),))
         conn.commit()
         cursor.close()
     finally:
@@ -297,6 +307,34 @@ def get_shopify_connection_for_sync(owner_username: str) -> dict[str, str]:
         except (InvalidToken, UnicodeDecodeError) as exc:
             raise RuntimeError("Shopify 授权令牌无法解密，请重新授权") from exc
         return {"workspace_id": workspace["workspace_id"], "connection_id": row[0], "shop_domain": row[1], "access_token": token}
+    finally:
+        conn.close()
+
+
+def delete_shopify_connection(owner_username: str) -> bool:
+    """Remove the local OAuth token and every saved aggregate for this workspace."""
+    workspace = get_or_create_workspace(owner_username)
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT connection_id FROM merchant_connections WHERE workspace_id = {placeholder} "
+            f"AND provider = {placeholder}",
+            (workspace["workspace_id"], "shopify"),
+        )
+        exists = cursor.fetchone() is not None
+        cursor.execute(
+            f"DELETE FROM merchant_sync_runs WHERE workspace_id = {placeholder} AND provider = {placeholder}",
+            (workspace["workspace_id"], "shopify"),
+        )
+        cursor.execute(
+            f"DELETE FROM merchant_connections WHERE workspace_id = {placeholder} AND provider = {placeholder}",
+            (workspace["workspace_id"], "shopify"),
+        )
+        conn.commit()
+        cursor.close()
+        return exists
     finally:
         conn.close()
 

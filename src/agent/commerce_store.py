@@ -13,7 +13,7 @@ import hmac
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -28,6 +28,7 @@ OPTIONAL_ORDER_FIELDS = (
     "customer_id", "status", "currency", "market", "timezone", "customer_locale", "marketing_consent",
 )
 MAX_IMPORT_ROWS = 200_000
+ORDER_RETENTION_DAYS = 90
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 _MARKET_PATTERN = re.compile(r"^[A-Z]{2}$|^GLOBAL$")
 _CONSENT_VALUES = {
@@ -61,7 +62,7 @@ def _add_column_if_missing(cursor: Any, statement: str) -> None:
 def _ensure_schema() -> None:
     if not _use_database():
         raise RuntimeError("通用数据连接需要配置 DATABASE_URL")
-    conn, _ = _connect_database()
+    conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
         cursor.execute(
@@ -104,6 +105,15 @@ def _ensure_schema() -> None:
         _add_column_if_missing(cursor, "ALTER TABLE commerce_orders ADD COLUMN timezone VARCHAR(64)")
         _add_column_if_missing(cursor, "ALTER TABLE commerce_orders ADD COLUMN customer_locale VARCHAR(32)")
         _add_column_if_missing(cursor, "ALTER TABLE commerce_orders ADD COLUMN marketing_consent VARCHAR(16)")
+        # Imported rows are anonymized before storage. They are nevertheless
+        # deleted after 90 days from collection, including their source metadata.
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=ORDER_RETENTION_DAYS)).isoformat(timespec="seconds")
+        cursor.execute(
+            f"DELETE FROM commerce_orders WHERE source_id IN (SELECT source_id FROM commerce_data_sources "
+            f"WHERE created_at < {placeholder})",
+            (cutoff,),
+        )
+        cursor.execute(f"DELETE FROM commerce_data_sources WHERE created_at < {placeholder}", (cutoff,))
         conn.commit()
         cursor.close()
     finally:
@@ -342,6 +352,27 @@ def import_order_csv(
     except Exception:
         conn.rollback()
         raise
+    finally:
+        conn.close()
+
+
+def delete_owner_order_data(owner: str) -> int:
+    """Immediately delete all locally stored anonymous order data for one workspace owner."""
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"SELECT source_id FROM commerce_data_sources WHERE created_by = {placeholder}",
+            (owner,),
+        )
+        source_ids = [row[0] for row in cursor.fetchall()]
+        for source_id in source_ids:
+            cursor.execute(f"DELETE FROM commerce_orders WHERE source_id = {placeholder}", (source_id,))
+        cursor.execute(f"DELETE FROM commerce_data_sources WHERE created_by = {placeholder}", (owner,))
+        conn.commit()
+        cursor.close()
+        return len(source_ids)
     finally:
         conn.close()
 
