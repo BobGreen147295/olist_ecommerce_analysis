@@ -8,9 +8,13 @@ destination.  It never prints connection strings or row contents.
 from __future__ import annotations
 
 import os
+import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 import psycopg2
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.agent import (
     account_store,
