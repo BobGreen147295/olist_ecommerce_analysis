@@ -424,7 +424,8 @@ def create_app() -> Flask:
                 raise ValueError("店铺域名格式无效")
             if terms_accepted is not True:
                 raise ValueError("请先确认商家数据处理条款，再继续 Shopify 授权")
-            from src.agent.merchant_connection_store import issue_authorization_state
+            from src.agent.merchant_connection_store import issue_authorization_state, record_data_terms_acceptance
+            record_data_terms_acceptance(session["username"], shop_domain)
             state = issue_authorization_state(session["username"], shop_domain)
             parameters = {
                 "client_id": os.environ["SHOPIFY_CLIENT_ID"],

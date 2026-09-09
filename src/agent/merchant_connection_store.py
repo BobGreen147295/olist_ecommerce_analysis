@@ -24,6 +24,7 @@ from .task_store import _connect_database, _use_database
 _SHOP_DOMAIN = re.compile(r"^[a-z0-9][a-z0-9-]*\.myshopify\.com$")
 _STATE_TTL_MINUTES = 10
 _SYNC_RETENTION_DAYS = 90
+_DATA_TERMS_VERSION = "2026-09-09"
 
 
 def _now() -> str:
@@ -121,6 +122,23 @@ def _ensure_schema() -> None:
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS merchant_terms_acceptances (
+                acceptance_id VARCHAR(32) PRIMARY KEY,
+                workspace_id VARCHAR(32) NOT NULL,
+                owner_username VARCHAR(32) NOT NULL,
+                provider VARCHAR(24) NOT NULL,
+                shop_domain VARCHAR(255) NOT NULL,
+                terms_version VARCHAR(32) NOT NULL,
+                accepted_at VARCHAR(40) NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_merchant_terms_workspace "
+            "ON merchant_terms_acceptances (workspace_id, provider, accepted_at)"
+        )
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS merchant_sync_runs (
                 sync_id VARCHAR(32) PRIMARY KEY,
                 workspace_id VARCHAR(32) NOT NULL,
@@ -203,6 +221,29 @@ def issue_authorization_state(owner_username: str, shop_domain: str) -> str:
         conn.commit()
         cursor.close()
         return raw_state
+    finally:
+        conn.close()
+
+
+def record_data_terms_acceptance(owner_username: str, shop_domain: str) -> None:
+    """记录商家在 OAuth 前确认的数据处理条款版本；不记录客户数据。"""
+    normalized_shop = shop_domain.strip().lower()
+    if not _SHOP_DOMAIN.fullmatch(normalized_shop):
+        raise ValueError("店铺域名必须是 xxx.myshopify.com")
+    workspace = get_or_create_workspace(owner_username)
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"INSERT INTO merchant_terms_acceptances "
+            f"(acceptance_id, workspace_id, owner_username, provider, shop_domain, terms_version, accepted_at) "
+            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
+            (uuid.uuid4().hex[:24], workspace["workspace_id"], owner_username, "shopify", normalized_shop,
+             _DATA_TERMS_VERSION, _now()),
+        )
+        conn.commit()
+        cursor.close()
     finally:
         conn.close()
 
