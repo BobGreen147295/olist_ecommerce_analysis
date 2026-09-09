@@ -419,8 +419,11 @@ def create_app() -> Flask:
             session = _require_session()
             payload = request.get_json(silent=True) or {}
             shop_domain = payload.get("shop_domain", "")
+            terms_accepted = payload.get("data_processing_terms_accepted")
             if not isinstance(shop_domain, str):
                 raise ValueError("店铺域名格式无效")
+            if terms_accepted is not True:
+                raise ValueError("请先确认商家数据处理条款，再继续 Shopify 授权")
             from src.agent.merchant_connection_store import issue_authorization_state
             state = issue_authorization_state(session["username"], shop_domain)
             parameters = {
