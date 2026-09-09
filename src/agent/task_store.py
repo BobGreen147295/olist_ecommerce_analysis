@@ -27,6 +27,10 @@ EDITABLE_FIELDS = {
 
 
 def _database_url() -> str:
+    if os.environ.get("USE_MANAGED_POSTGRES", "").strip() == "1":
+        managed_url = os.environ.get("MIGRATION_TARGET_DATABASE_URL", "").strip()
+        if managed_url:
+            return managed_url
     value = os.environ.get("DATABASE_URL", "").strip()
     if value:
         return value
