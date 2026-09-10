@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PilotApplicationForm } from "./PilotApplicationForm";
 
 export const metadata: Metadata = {
   title: "RevenueOps 试点计划 | Shopify 收入诊断",
@@ -12,7 +13,8 @@ export default function PilotPage() {
       <p className="eyebrow">RevenueOps pilot · 首批 3 家商家</p>
       <h1>7 天找出一项值得验证的收入机会</h1>
       <p>面向已有订单、希望更清楚地判断复购、退款或折扣问题的 Shopify 商家。我们先做只读数据诊断，再由商家自行决定是否采取行动。</p>
-      <div className="button-row"><Link className="button button-primary" href="/data">评估数据连接</Link><Link className="button button-ghost" href="/privacy">查看数据处理条款</Link></div>
+      <div className="button-row"><Link className="button button-primary" href="#apply">申请免费试点</Link><Link className="button button-ghost" href="/privacy">查看数据处理条款</Link></div>
+      <p className="pilot-stage-note">当前为独立开发者运营的受控早期试点，并非 Shopify 官方产品。试点不收费，也不承诺特定营收结果。</p>
     </section>
 
     <section className="pilot-grid">
@@ -49,6 +51,8 @@ export default function PilotPage() {
       <article><h2>适合</h2><p>已有真实订单，且正想判断复购表现、退款变化或折扣效率的 Shopify 商家。</p></article>
       <article><h2>暂不适合</h2><p>尚无可用订单数据，或希望系统直接代替人工向客户群发营销内容的场景。</p></article>
     </section>
+
+    <PilotApplicationForm />
 
     <section className="pilot-summary card">
       <p className="eyebrow">试点说明</p>

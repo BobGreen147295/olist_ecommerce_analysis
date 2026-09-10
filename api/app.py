@@ -25,6 +25,10 @@ from flask import Flask, jsonify, redirect, request
 
 MAX_MESSAGE_LENGTH = 1_500
 DEFAULT_ORIGINS = "https://olist-revenueops.pages.dev,http://localhost:3000"
+PILOT_CHALLENGES = {"repeat_purchase", "refunds", "discounts", "other"}
+PILOT_ORDER_RANGES = {"1-49", "50-199", "200-999", "1000+"}
+EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+SHOP_DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*\.myshopify\.com$")
 SHOPIFY_SCOPES = ("read_orders", "read_customers", "read_products", "read_inventory")
 SHOPIFY_API_VERSION = "2026-07"
 SHOPIFY_SUMMARY_QUERY = """
@@ -345,6 +349,43 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         return jsonify(_shopify_readiness())
+
+    @app.route("/v1/pilot-applications", methods=["POST", "GET", "OPTIONS"])
+    def pilot_applications() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        if request.method == "GET":
+            try:
+                session = _require_session()
+                if session["role"] != "admin":
+                    return jsonify({"error": "仅管理员可查看试点申请"}), 403
+                from src.agent.pilot_application_store import list_pilot_applications
+                return jsonify({"applications": list_pilot_applications()})
+            except (ValueError, RuntimeError):
+                return jsonify({"error": "登录已失效，请重新登录"}), 401
+
+        payload = request.get_json(silent=True) or {}
+        if payload.get("website"):
+            return jsonify({"application_id": "accepted"}), 201
+        email = str(payload.get("contact_email", "")).strip().lower()
+        shop_domain = str(payload.get("shop_domain", "")).strip().lower().removeprefix("https://").rstrip("/")
+        monthly_orders = str(payload.get("monthly_orders", "")).strip()
+        challenge = str(payload.get("challenge", "")).strip()
+        if not payload.get("terms_accepted"):
+            return jsonify({"error": "请先同意试点数据处理说明"}), 400
+        if len(email) > 254 or not EMAIL_PATTERN.fullmatch(email):
+            return jsonify({"error": "请输入有效的联系邮箱"}), 400
+        if len(shop_domain) > 255 or not SHOP_DOMAIN_PATTERN.fullmatch(shop_domain):
+            return jsonify({"error": "请输入有效的 .myshopify.com 店铺域名"}), 400
+        if monthly_orders not in PILOT_ORDER_RANGES or challenge not in PILOT_CHALLENGES:
+            return jsonify({"error": "请选择订单规模和希望诊断的问题"}), 400
+        try:
+            from src.agent.pilot_application_store import create_pilot_application
+            application_id = create_pilot_application(email, shop_domain, monthly_orders, challenge)
+            return jsonify({"application_id": application_id}), 201
+        except RuntimeError:
+            app.logger.exception("Pilot application storage failed")
+            return jsonify({"error": "申请服务暂不可用，请稍后重试"}), 503
 
     @app.route("/v1/auth/login", methods=["POST", "OPTIONS"])
     def login() -> Any:
