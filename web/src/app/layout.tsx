@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./premium.css";
 import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-scroll-behavior="smooth">
       <body>
         <AppShell>{children}</AppShell>
       </body>
