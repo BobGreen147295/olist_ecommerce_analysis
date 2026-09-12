@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pyd
+.testdeps/
 
 # 虚拟环境
 venv/
@@ -24,6 +25,13 @@ Thumbs.db
 *.png
 *.jpg
 *.jpeg
+
+# 本地分析数据与导出文件不得提交到 GitHub
+data/raw/
+data/processed/
+*_export*.csv
+orders*.csv
+customers*.csv
 
 # 本地运行产生的运营任务，避免把用户操作数据提交到仓库
 data/processed/operation_tasks.json

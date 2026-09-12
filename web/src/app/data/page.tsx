@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { PageHeading, StatusBadge } from "@/components/Ui";
 
-const sources = [["订单与客户历史","已接入","Olist 历史样本","仅用于产品验证"],["活动执行回执","未接入","Klaviyo / Braze","接入后才可判断真实触达"],["广告消耗与转化","未接入","Meta / Google Ads","接入后才可计算渠道 ROI"],["履约与退款成本","未接入","Shopify / ERP","接入后才可计算净利润"]];
+const sources = [["订单与客户历史","已接入","合成演示场景","仅用于产品流程验证"],["活动执行回执","未接入","Klaviyo / Braze","接入后才可判断真实触达"],["广告消耗与转化","未接入","Meta / Google Ads","接入后才可计算渠道 ROI"],["履约与退款成本","未接入","Shopify / ERP","接入后才可计算净利润"]];
 
 const connectors = [
   { name: "Shopify", type: "订单、客户、产品、退款", detail: "优先接入 · 形成收入与复购基线", icon: "S", frequency: "每日同步", access: "只读", fields: "订单金额、币种、产品、客户标识、退款状态", purpose: "建立收入、复购和退款基线" },

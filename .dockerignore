@@ -1,7 +1,10 @@
 .git
 .venv
+.testdeps
 __pycache__
 *.pyc
-output/charts
-data/processed/operation_tasks.json
-data/processed/operation_tasks.json.tmp
+data/raw
+data/processed
+web/node_modules
+web/.next
+web/out

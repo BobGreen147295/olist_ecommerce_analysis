@@ -1,4 +1,4 @@
-# Olist RevenueOps Web API Contract (v0.1)
+# RevenueOps Web API Contract (v0.1)
 
 网站目前使用明确标注的示例数据。下一阶段将由 Python Agent 服务提供以下只读 / 人工审批 API，前端不直接连接数据库。
 

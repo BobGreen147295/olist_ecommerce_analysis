@@ -34,12 +34,7 @@ def _database_url() -> str:
     value = os.environ.get("DATABASE_URL", "").strip()
     if value:
         return value
-    # Streamlit Cloud 的 Secrets 不会自动注入 os.environ，需要在运行时读取。
-    try:
-        import streamlit as st
-        return str(st.secrets.get("DATABASE_URL", "") or "").strip()
-    except Exception:
-        return ""
+    return ""
 
 
 def _use_database() -> bool:

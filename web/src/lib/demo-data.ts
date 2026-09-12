@@ -2,7 +2,7 @@ export const workspace = {
   name: "Northstar Commerce",
   mode: "示例工作区",
   updatedAt: "2026-08-31 09:42 UTC",
-  dataSource: "Olist 历史样本 + 合成活动结果",
+  dataSource: "合成订单场景 + 合成活动结果",
 };
 
 export const opportunities = [

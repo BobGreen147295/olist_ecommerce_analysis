@@ -3,7 +3,7 @@ import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
-  title: "Olist RevenueOps | AI 商家运营工作台",
+  title: "RevenueOps | AI 商家运营工作台",
   description: "面向跨境 DTC 商家的 AI 运营决策与实验闭环工作台。",
 };
 

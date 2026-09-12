@@ -35,23 +35,11 @@ class AgentState(TypedDict, total=False):
 # 可用工具元数据（给 LLM 看）
 TOOL_SCHEMA = """
 可用工具列表（JSON 格式）:
-- query_sales_by_region(region: str): 查询某州每百万人销售额和排名，region 为州代码如 "SP"、"BA"
-- query_sales_trend(months: int): 查询近N个月销售趋势，默认6个月
-- query_payment_distribution(): 查询支付方式分布
-- query_user_segments(): 查询用户分群概况
-- query_rfm_summary(): 查询 RFM 分层统计
-- query_churn_risk(): 查询流失风险分布（优先使用 XGBoost 结果）
-- query_top_categories(n: int): 查询热销商品 TOP N（按 product_id），默认10
+- query_sales_trend(months: int): 查询当前账户已连接数据源的近 N 个月订单趋势，默认 6 个月
 
 选择规则:
-- 用户问地区销量/某州数据 → query_sales_by_region
-- 用户问趋势/变化/最近 → query_sales_trend
-- 用户问支付/付款方式 → query_payment_distribution
-- 用户问用户/客户分群 → query_user_segments
-- 用户问 RFM/客户价值 → query_rfm_summary
-- 用户问流失/召回/风险客户 → query_churn_risk + query_rfm_summary
-- 用户问产品/品类/热销 → query_top_categories
-- 如果不确定，同时调用 query_sales_trend + query_rfm_summary 获取全面数据
+- 趋势、变化、订单或经营概况 → query_sales_trend
+- 不支持的维度也只调用 query_sales_trend，并在回答中明确说明数据限制；不得推测或回退到历史样本
 """
 
 
@@ -103,39 +91,8 @@ def _format_history(history: list[dict], max_turns: int = 4) -> str:
 
 
 def _fallback_tool_calls(query: str) -> list[dict]:
-    """LLM 路由失败时的保底意图识别，保证常见问题仍可查询数据。"""
-    text = query.lower()
-    calls: list[dict] = []
-    region_aliases = {
-        "圣保罗": "SP", "são paulo": "SP", "sao paulo": "SP", "sp州": "SP",
-        "里约": "RJ", "rio de janeiro": "RJ", "rj州": "RJ",
-        "米纳斯": "MG", "minas gerais": "MG", "mg州": "MG",
-        "巴伊亚": "BA", "bahia": "BA", "ba州": "BA",
-    }
-    region = next((code for alias, code in region_aliases.items() if alias in text), None)
-    if region:
-        calls = [{"tool": "query_sales_by_region", "args": {"region": region}}]
-    elif any(word in text for word in ["流失", "召回", "风险", "挽回"]):
-        calls = [
-            {"tool": "query_churn_risk", "args": {}},
-            {"tool": "query_rfm_summary", "args": {}},
-        ]
-    elif any(word in text for word in ["支付", "付款", "分期"]):
-        calls = [{"tool": "query_payment_distribution", "args": {}}]
-    elif any(word in text for word in ["分群", "客群", "用户画像"]):
-        calls = [{"tool": "query_user_segments", "args": {}}]
-    elif any(word in text for word in ["rfm", "客户价值", "高价值客户", "低价值客户"]):
-        calls = [{"tool": "query_rfm_summary", "args": {}}]
-    elif any(word in text for word in ["产品", "品类", "热销", "商品"]):
-        calls = [{"tool": "query_top_categories", "args": {"n": 10}}]
-    elif any(word in text for word in ["趋势", "变化", "最近", "月份", "月度"]):
-        calls = [{"tool": "query_sales_trend", "args": {"months": 6}}]
-    else:
-        calls = [
-            {"tool": "query_sales_trend", "args": {"months": 6}},
-            {"tool": "query_rfm_summary", "args": {}},
-        ]
-    return calls
+    """Use the only production-safe aggregate tool when model routing fails."""
+    return [{"tool": "query_sales_trend", "args": {"months": 6}}]
 
 
 def _parse_json_object(raw: str) -> dict:

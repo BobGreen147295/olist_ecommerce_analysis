@@ -1,4 +1,4 @@
-# Olist RevenueOps Web
+# RevenueOps Web
 
 面向跨境 DTC 商家的独立运营工作台前端。它把 AI 发现的收入机会、人工审批的活动实验、结果归因和数据接入状态放在同一个可审计界面中。
 
@@ -10,7 +10,7 @@
 - `Learning`：严格区分已观测实验结果和模拟预估。
 - `Data`：面向 Shopify、Klaviyo/Braze、广告平台和 ERP 的数据接入路径。
 
-当前页面数据均为明确标注的示例数据，不代表真实商家经营结果。后端 API 契约见 [API_CONTRACT.md](./API_CONTRACT.md)。
+未连接商家时，页面只展示明确标注的合成演示场景，不代表真实商家经营结果。连接 Shopify 后，真实汇总与演示机会始终分开显示。后端 API 契约见 [API_CONTRACT.md](./API_CONTRACT.md)。
 
 ## 本地运行
 

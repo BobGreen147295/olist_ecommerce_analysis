@@ -1,4 +1,4 @@
-# Olist RevenueOps Console — Product Experience Specification
+# RevenueOps for Shopify — Product Experience Specification
 
 **Version:** 1.0  
 **Audience:** Cross-border DTC merchants, growth operators, and retention leads  
@@ -6,7 +6,7 @@
 
 ## 1. Experience promise
 
-Olist RevenueOps is not an analytics dashboard with an embedded chatbot. It is a decision workspace for merchants who need to turn customer and order signals into accountable retention actions.
+RevenueOps is not an analytics dashboard with an embedded chatbot. It is a decision workspace for merchants who need to turn customer and order signals into accountable retention actions.
 
 In one session, an operator should be able to answer:
 
@@ -47,7 +47,7 @@ The legacy free-form Agent chat remains under **Ask Agent** as a secondary capab
 
 ### Header
 
-- Brand: `Olist RevenueOps`
+- Brand: `RevenueOps`
 - Workspace name and connected-source state
 - Global time context (e.g. `Reporting in UTC · Market: US`)
 - Data state badge: `Sample`, `Imported`, `Connected`, or `Needs attention`
@@ -120,7 +120,7 @@ Calm, operational, and premium. Avoid “AI magic” gradients, emoji-heavy labe
 ### Content rules
 
 - English is the default merchant-facing language; a future locale setting may translate it;
-- Never show `R$` outside Olist sample mode;
+- Never present a synthetic-scenario currency or value as an observed merchant result;
 - Write “Estimated incremental revenue” rather than “Revenue” when it is modelled;
 - Show the evidence period next to every metric that may be interpreted as current;
 - Explain missing data in product terms: `Customer consent is not connected — campaign export is unavailable.`
@@ -130,7 +130,7 @@ Calm, operational, and premium. Avoid “AI magic” gradients, emoji-heavy labe
 The redesign is acceptable only when:
 
 1. A first-time user can identify the primary product value in the first viewport without opening chat;
-2. No merchant-connected page mixes Olist demo metrics with merchant metrics;
+2. No merchant-connected page mixes synthetic scenario metrics with merchant metrics;
 3. Every money metric carries a currency and every result carries a mode;
 4. A user can distinguish recommendation, approved activity, simulation, and observed result at a glance;
 5. Every execution-related control states its human-approval and consent boundary;

@@ -2,7 +2,7 @@
 
 **Version**: v4.0
 **Status**: Product-definition baseline
-**Product name (working title)**: Olist RevenueOps Agent
+**Product name**: RevenueOps for Shopify
 
 ## 1. First principle
 
@@ -147,28 +147,29 @@ Campaign learning record and next-best action
 
 ## 9. Current implementation and non-claims
 
-The repository provides an authenticated Streamlit product, PostgreSQL persistence, CSV order import, deterministic analysis tools, proactive alerts, editable operation tasks, simulated campaign records, A/B result calculation, feedback operations, and regression evaluation.
+The repository provides a Next.js merchant workspace, a Flask API, account isolation, Shopify OAuth with minimum read scopes, encrypted connection storage, privacy-safe aggregate and order-trend sync, de-identified CSV import, opportunity data gates, human-reviewed tasks, pilot applications, PostgreSQL persistence, and automated tests.
 
-It does **not** yet provide Shopify OAuth, customer-consent ingestion, live Email/SMS/WhatsApp delivery, or an observed-result connector. It must be described as a **cross-border RevenueOps prototype with a simulated execution loop**, not as a production marketing automation platform.
+It does **not** yet provide live Email/SMS/WhatsApp delivery or a production observed-result connector. It must be described as a **connected-trial RevenueOps product**, not as autonomous marketing automation.
 
-Olist data is retained only as a transparent demonstration and regression baseline when no merchant data source is connected.
+When no merchant source is connected, the interface may show only clearly labelled synthetic scenarios. The current branch does not distribute or silently fall back to the historical Olist dataset.
 
 ## 10. Delivery roadmap
 
 ### Phase A — Cross-border foundation (this iteration)
 
 - [x] Canonical order CSV connection
-- [ ] Require/order-protect currency, market, timezone and order-status metadata
-- [ ] Store campaign locale, attribution window, execution mode, and result currency
-- [ ] Replace Olist-first product language with cross-border DTC language
-- [ ] Clearly label sample / imported / simulated / observed data states
+- [x] Require/order-protect currency, market, timezone and order-status metadata
+- [x] Store campaign locale, attribution window, execution mode, and result currency
+- [x] Replace dataset-first product language with cross-border DTC language
+- [x] Clearly label synthetic / imported / connected / observed data states
 
 ### Phase B — Shopify connected trial
 
-- Shopify OAuth installation and minimum read scopes;
-- Incremental orders/customer/product sync;
-- Shopify data-quality and consent-readiness checks;
-- Automatic refresh, source health, and disconnect/delete controls.
+- [x] Shopify OAuth installation and minimum read scopes;
+- [x] Privacy-safe order/customer/product/inventory aggregate sync;
+- [x] Shopify order-trend and consent-readiness checks;
+- [x] Source health and disconnect/delete controls;
+- [ ] Scheduled background refresh and recovery monitoring.
 
 ### Phase C — Human-approved activation
 

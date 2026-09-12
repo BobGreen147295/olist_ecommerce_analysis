@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [copilotOpen, setCopilotOpen] = useState(false);
   return <div className="app-shell"><aside className="sidebar">
-    <Link className="brand" href="/"><span className="brand-mark">O</span><span>Olist<span className="brand-accent">/</span>RevenueOps</span></Link>
+    <Link className="brand" href="/"><span className="brand-mark">R</span><span>RevenueOps</span></Link>
     <div className="workspace-switcher"><span className="workspace-dot" /><span>Northstar Commerce</span><span className="workspace-chevron">⌄</span></div>
     <nav className="main-nav" aria-label="Main navigation"><p className="nav-label">Workspace</p>{navigation.map((item) => {
       const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);

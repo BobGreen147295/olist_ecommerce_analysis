@@ -1,248 +1,82 @@
-# Olist RevenueOps Agent
+# RevenueOps for Shopify
 
-> 面向跨境 DTC 商家的 AI 增长与留存运营智能体：连接经营数据、识别机会、生成可审核活动，并通过对照实验衡量增量收入与 ROI。
+面向跨境 DTC 商家的只读收入诊断与运营决策工作台。RevenueOps 连接商家授权的数据，识别复购、退款和折扣异常，生成带证据的机会建议；任何客户触达或店铺变更都必须由商家人工确认。
 
-当前 Olist 数据集只作为透明的演示与回归基线；连接商家数据后，系统优先使用导入订单进行销售趋势和主动机会分析。产品不会自动触达消费者，真实执行必须经过商家批准并满足营销同意状态要求。
+- 在线产品：[olist-revenueops.pages.dev](https://olist-revenueops.pages.dev/)
+- 免费试点：[申请 7 天只读诊断](https://olist-revenueops.pages.dev/pilot)
+- 当前阶段：首批真实商家试点
 
-> 基于 **LangGraph + Ollama (Qwen3) + XGBoost** 的 LLM Agent 运营诊断系统。自然语言提问 → Agent 自主查询数据 → 输出带证据诊断 → 生成可确认的运营任务草稿。
+> 仓库名和线上域名中的 `olist` 是早期项目留下的兼容标识。当前分支不再分发或在界面展示 Olist 数据集；保留这些地址是为了避免中断 Cloudflare、Render 和 Shopify OAuth 回调。
 
----
-
-## 🏗️ 混合 AI 架构
-
-系统采用**三层混合架构**，每层用最合适的技术：
-
-```
-用户: "圣保罗州最近销量怎么样？"
-         │
-┌────────▼──────────────────────────────────┐
-│  🧠 LLM 推理层 (Ollama + Qwen3:8b)        │
-│  理解问题、选择工具、分析数据、生成策略       │
-│  约束：System Prompt 禁止无数据支撑的建议    │
-└────────┬──────────────────────────────────┘
-         │ 只做推理，不碰原始数据
-┌────────▼──────────────────────────────────┐
-│  ⚙️ 确定性工具层 (Pandas，6 个工具)         │
-│  数据查询 100% 准确，零幻觉                 │
-│  地区/趋势/支付/分群/RFM/流失/品类           │
-└────────┬──────────────────────────────────┘
-         │ 只查数据，不做决策
-┌────────▼──────────────────────────────────┐
-│  📊 ML 模型层 (KMeans + XGBoost)           │
-│  用户分群 + 流失预测，数值可验证             │
-└───────────────────────────────────────────┘
-```
-
-**设计原则**：LLM 不碰数据，数据不走 LLM。确定性工具打底，LLM 只负责它最擅长的事——理解语言和生成策略。
-
----
-
-## 🤖 Agent 工作流
+## 产品流程
 
 ```mermaid
-graph TD
-    User(["👤 用户自然语言"]) --> Agent
-
-    subgraph Agent["LangGraph 三节点 Agent"]
-        N1["📥 fetch_data<br/>LLM 解析意图 → 选择工具 → 执行查询"]
-        N2["📊 analyze<br/>LLM 基于真实数据给出关键发现"]
-        N3["💡 recommend<br/>LLM 生成 P0-P2 策略 + 行动点 + ROI"]
-        N1 --> N2 --> N3
-    end
-
-    subgraph Tools["确定性数据工具（7 个）"]
-        T1["query_sales_by_region"]
-        T2["query_sales_trend"]
-        T3["query_payment_distribution"]
-        T4["query_user_segments"]
-        T5["query_rfm_summary"]
-        T6["query_churn_risk"]
-        T7["query_top_categories"]
-    end
-
-    N1 -->|LLM 自主选择 1-3 个| Tools
-    N3 --> Output(["📋 结构化策略报告"])
+flowchart LR
+    A[商家授权 Shopify] --> B[只读同步必要汇总]
+    B --> C[数据质量与可用性门禁]
+    C --> D[生成可追溯的收入机会]
+    D --> E[商家人工审核]
+    E --> F[小范围实验与结果复盘]
 ```
 
-**7 类诊断能力**：
+## 已实现
 
-| 场景 | 示例问题 |
-|------|---------|
-| 地区销量 | "圣保罗州最近销量怎么样" |
-| 销售趋势 | "分析最近半年的销售趋势" |
-| 用户流失 | "客户流失情况如何，怎么挽回" |
-| 支付诊断 | "支付方式分布有没有问题" |
-| 选品分析 | "哪些产品卖得好" |
-| 客户分层 | "客户分群情况怎么样" |
+- Shopify OAuth：只申请订单、客户、产品和库存的只读权限。
+- 聚合同步：订单、客户、产品和库存计数，以及隐私安全的订单趋势。
+- 数据隔离：连接状态、导入数据和任务按账户隔离。
+- 安全存储：OAuth token 服务端加密，密钥仅通过托管环境变量提供。
+- 人工决策门禁：Agent 只能生成建议和活动草案，不能自动触达消费者或修改店铺。
+- 试点申请：公开申请页与管理员申请列表。
+- 部署：Cloudflare Pages 前端、Render API、托管 PostgreSQL。
 
----
+## 数据边界
 
-## 📁 项目结构
+RevenueOps 默认不保存客户邮箱、电话、地址、IP、设备或浏览器信息。订单趋势在同步后压缩为汇总指标；商家可以撤销 Shopify 授权并删除 RevenueOps 中的连接数据。
 
-```
-olist_project/
-├── data/
-│   ├── raw/                       # 原始数据（4 个 CSV）
-│   └── processed/                 # 清洗后 + 模型产出（10 个 CSV）
-│
-├── src/
-│   ├── crawler.py                 # 爬虫：巴西各州人口
-│   ├── data_cleaning.py           # 数据清洗管道
-│   ├── analysis_rfm.py            # RFM 客户价值分析
-│   ├── analysis_geo.py            # 地理分析（人均销售额）
-│   ├── analysis_payment.py        # 支付方式分析
-│   ├── model_clustering.py        # KMeans 用户分群
-│   ├── model_churn.py             # XGBoost 流失预测
-│   ├── visualization.py           # 图表生成（13 张）
-│   └── agent/                     # 🤖 Agent 模块
-│       ├── tools.py               # 7 个数据查询工具 + TOOL_REGISTRY
-│       ├── agent_graph.py         # LangGraph 三节点编排
-│       ├── task_store.py          # 本地 JSON / PostgreSQL 任务存储
-│       ├── evaluation.py          # A/B 实验与 ROI 评估
-│       └── observability.py       # 脱敏运行日志
-│       └── run_agent.py           # CLI 入口
-│
-├── dashboard/
-│   ├── dashboard.py               # Streamlit 仪表盘
-│   └── ai_operations_system.html  # 静态诊断页面
-│
-├── web/                           # 静态展示（index.html + CSS/JS）
-├── reports/                       # 面试材料
-├── output/charts/                 # 13 张自动生成图表
-├── PRD.md                         # 产品需求文档
-└── requirements.txt
+未连接真实商家时，界面只展示明确标注的**合成演示场景**。合成数据不得与真实 Shopify 汇总混合，也不得作为真实收入承诺。
+
+## 仓库结构
+
+```text
+api/        Flask HTTPS API、OAuth 和数据边界
+src/agent/  Agent、账户隔离、连接与任务存储
+web/        Next.js 商家工作台
+tests/      API、权限、Shopify 同步与租户隔离测试
+scripts/    数据库迁移与发布辅助脚本
 ```
 
-**8 个独立模块**，每个可单独运行和测试。原 1000 行的 God Script 已消除。
+## 本地验证
 
----
-
-## 📊 核心数据
-
-| 指标 | 数值 |
-|------|------|
-| 总订单数 | 99,441 |
-| 总销售额 | R$ 16,008,872 |
-| 总客户数 | 99,441 |
-| 平均客单价 | R$ 160.99 |
-| RFM 高价值客户 | 3,236 人 |
-| 潜在高价值客户 | 21,730 人 |
-| Agent 数据工具 | 7 个 |
-| 分析图表 | 13 张 |
-| 代码模块 | 12 个（8 分析 + 3 Agent + 1 爬虫） |
-
-> 注：XGBoost 流失预测的标签基于 RFM 分数构造（非真实流失标签），用于演示模型流程。生产环境中接入真实流失数据后可直接替换。
-
----
-
-## 🛠️ 技术栈
-
-| 类别 | 技术 | 说明 |
-|------|------|------|
-| Agent 编排 | LangGraph | 有向图状态机，三节点工作流 |
-| LLM 推理 | Ollama + Qwen3:8b | 本地开源，零 API 成本 |
-| 数据处理 | Pandas, NumPy | 10 万级订单 |
-| 用户分群 | KMeans (scikit-learn) | 3 类聚类 |
-| 流失预测 | XGBoost | 高/中/低风险识别 |
-| 可视化 | Matplotlib + Streamlit | 13 图表 + 交互仪表盘 |
-| 爬虫 | Requests + BeautifulSoup | 人口数据采集 |
-| Web | 静态 HTML + ECharts | 零依赖演示 |
-
----
-
-## 🚀 快速开始
+后端：
 
 ```bash
-# 1. 安装 Ollama 并拉取模型
-ollama pull qwen3:8b
-
-# 2. 安装 Python 依赖
-pip install -r requirements.txt
-
-# 3. 运行 Agent
-python src/agent/run_agent.py "分析最近半年的销售趋势"
-
-# 如需重新生成全部清洗、分析和模型产物
-python src/run_pipeline.py
+python -m pip install -r requirements.txt
+python -m pytest -q
+python -m flask --app api.app:app run --port 8000
 ```
 
-**运行独立模块**：
+前端：
 
 ```bash
-python src/data_cleaning.py      # 数据清洗
-python src/analysis_rfm.py       # RFM 分析
-python src/model_churn.py        # 流失预测
-python src/visualization.py      # 生成图表
-streamlit run dashboard/dashboard.py  # 交互仪表盘
+cd web
+npm ci
+npm run build
 ```
 
-### 线上部署能力
+浏览器端只配置公开 API 地址：
 
-应用支持本地 Ollama 和云端 OpenAI 两种模型模式。公开部署时，在 Streamlit Secrets 中配置 `LLM_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_MODEL`，并建议配置 `APP_PASSWORD`、`MAX_AGENT_CALLS_PER_SESSION` 和 PostgreSQL `DATABASE_URL`。访问控制、调用上限、任务持久化和 Agent 运行观测说明见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+```text
+NEXT_PUBLIC_REVENUEOPS_API_URL=http://localhost:8000
+```
 
-PostgreSQL 接入后，运营任务会持久化保存；页面侧边栏会显示 `PostgreSQL / 连接正常`，用于演示部署状态。
+所有服务端密钥必须放在托管平台环境变量中。完整配置见 [DEPLOYMENT.md](DEPLOYMENT.md) 和 [api/README.md](api/README.md)。
 
-账号体系支持管理员初始化、邀请码注册、任务归属隔离和按用户保存的历史对话；刷新页面后，可在侧边栏恢复自己的历史分析记录。
+## 当前验证目标
 
-每条 Agent 回复均可获得用户反馈；管理员可查看调用量、响应耗时、工具成功率、结构化输出率、满意度、任务采纳率与实验 ROI，用于持续评估 Agent 质量。
+在首批真实 Shopify 商家中验证三件事：
 
-负反馈会按“回答内容、数据准确性、页面/交互体验”分流：内容问题可以重新生成，数据和体验问题进入管理员待办中心，形成可追踪的产品改进闭环。
+1. 只读数据连接是否足以发现可信机会；
+2. 商家是否愿意审核并执行建议；
+3. 小范围实验能否产生可复核的增量结果。
 
-管理员质量看板还会展示负反馈数量、待处理量、已处理率、平均闭环时长及各类问题分布，用于确定下一轮产品改进优先级。
-
-管理员还可以运行 30 条“工具路由回归评测”：覆盖地区、趋势、支付、分群、RFM、流失召回和商品问题，验证保底路由、工具参数与真实数据读取是否正常。评测不调用 LLM、不消耗 API 额度，可作为版本发布前的基础质量门禁。
-
-每次真实 Agent 对话还会自动执行 `qa_v1` 质量评测：证据覆盖率、来源标注率和策略完整度按确定性规则计算，并按模型与评测版本汇总。该评分不保存原始问题或完整回答，也不让模型给自己打分。
-
-产品还提供“主动经营预警中心”：用确定性规则识别销售下滑、高价值沉睡客户和地区效率机会，并先检查尾部数据完整性，避免未完成月份触发假预警。每条预警都提供证据、影响范围、建议动作与一键交给 Agent 深度诊断入口。
-
-管理员可在“数据连接”中上传脱敏订单 CSV，并将订单号、下单时间和订单金额映射到统一跨境电商数据模型。导入时必须声明币种，系统还支持市场、时区、客户语言与营销同意状态字段；这些字段是后续 Shopify、Klaviyo、Saleor、Medusa 连接器的共同基础。不同币种不会被直接加总为 GMV 或 ROI；未接入时，系统仍使用 Olist 演示数据。
-
-“运营行动中心”将建议与执行分离：Agent 只能创建任务草稿；人工确认后才可创建可审计的模拟营销活动，记录渠道、预算、周期与模拟触达人数；随后回填 A/B 结果计算增量收入和 ROI。当前不会调用真实邮件、短信、优惠券或支付接口。
-
----
-
-## 💼 面试问答
-
-### Q1：你说这是 Agent，和规则引擎有什么区别？
-
-规则引擎是预先写好的 if-else 树——"如果提到圣保罗就调地区查询，如果提到趋势就调趋势查询"。遇到新说法就匹配不上。
-
-我的 Agent 是 **LLM 自主决策**：用户可以用任何自然语言方式提问，LLM 理解意图后自己决定调用哪些工具、怎么组合。6 个工具是插拔式的——新增一个品类分析工具，LLM 自动就会用，不用改任何 if-else。
-
-### Q2：为什么用 LangGraph？
-
-LangChain Chain 是线性的 A→B→C，没有分支。LangGraph 用有向图定义工作流，每个节点是独立决策单元。当前是三节点线性流（fetch→analyze→recommend），但架构天然支持扩展——比如以后加多轮对话，analyze 发现数据不够可以**循环回** fetch_data 再查一次，这在 Chain 里做不到。
-
-### Q3：LLM 产生幻觉怎么办？
-
-三层防护：
-1. **数据层不下场**：6 个数据工具是纯 Pandas 查询，不经过 LLM。查出来的数字 100% 准确。
-2. **Prompt 硬约束**：System Prompt 明确规定「每条建议必须引用工具返回的真实数据」，不允许自由发挥。
-3. **分层隔离**：LLM 出问题不会污染数据层和 ML 层，这两层可独立产出分析报告。
-
-### Q4：XGBoost AUC 0.90+ 是怎么来的？
-
-诚实地说，Olist 数据集没有真实流失标签。我基于 RFM 分数构造了代理标签（rfm_score < 6 视为流失），训练得到 AUC 0.90+。这说明特征有效，但不能等同于真实流失预测准确率。PRD 和代码注释中已说明这一点。接入真实流失数据后训练流程无需改动。
-
----
-
-## 🔮 扩展方向
-
-- [x] LangGraph 三节点 Agent
-- [x] 模块化拆分（8 个独立模块）
-- [x] KMeans + XGBoost + RFM 建模
-- [x] 结构化策略输出（P0-P2 + 行动点 + ROI）
-- [ ] MCP Server 化：将 7 个数据工具包装为 Model Context Protocol 服务
-- [ ] RAG 向量库：历史运营报告入库，相似案例检索
-- [ ] Web Agent 界面：在现有 `web/` 模板基础上重建聊天 UI
-- [ ] 真实流失标签：替换 RFM 代理标签
-- [ ] Plotly 迁移：13 张图从 matplotlib 迁到交互式 Plotly
-
----
-
-## 👤 信息
-
-- 项目类型：数据分析 + LLM Agent 全栈项目
-- 技术栈：Python / LangGraph / Ollama / XGBoost / Streamlit
-- GitHub：[BobGreen147295/olist_ecommerce_analysis](https://github.com/BobGreen147295/olist_ecommerce_analysis)
+产品不承诺特定营收结果。任何建议都应显示数据来源、统计周期、假设和限制。
