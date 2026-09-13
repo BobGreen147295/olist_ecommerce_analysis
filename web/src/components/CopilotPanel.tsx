@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { ArrowUp, X } from "@phosphor-icons/react";
 
 type Message = { role: "assistant" | "user"; content: string };
 
@@ -55,11 +56,11 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
     }
   }
   return <><button className={`copilot-scrim ${open ? "copilot-visible" : ""}`} onClick={onClose} aria-label="关闭 AI 对话" /><aside className={`copilot-panel ${open ? "copilot-open" : ""}`} aria-label="AI Co-pilot">
-    <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>运营智能问答</h2><span><i /> {agentMode === "agent" ? "服务端 Agent · 人工可控" : agentMode === "demo" ? "示例推理 · 人工可控" : "服务暂不可用 · 已降级"}</span></div><button onClick={onClose} aria-label="关闭">×</button></header>
+    <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>运营智能问答</h2><span><i /> {agentMode === "agent" ? "服务端 Agent · 人工可控" : agentMode === "demo" ? "示例推理 · 人工可控" : "服务暂不可用 · 已降级"}</span></div><button onClick={onClose} aria-label="关闭"><X size={18} aria-hidden /></button></header>
     <div className="copilot-context">当前上下文：Northstar Commerce · 示例工作区<br />数据范围：订单历史、客户分层、模拟实验结果</div>
     <div className="copilot-messages">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={`copilot-message ${message.role}`}><span>{message.role === "assistant" ? "AI" : "你"}</span><p>{message.content}</p></div>)}</div>
     <div className="copilot-prompts"><button onClick={() => setDraft("为什么要先做流失客户召回？")}>为什么先做流失召回？</button><button onClick={() => setDraft("当前 ROI 可以相信吗？")}>当前 ROI 可以相信吗？</button><button onClick={() => setDraft("还缺哪些数据连接？")}>还缺哪些数据？</button></div>
-    <form className="copilot-compose" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="问一个运营问题…" rows={2} /><button type="submit" disabled={isLoading}>{isLoading ? "分析中…" : "发送 ↑"}</button></form>
+    <form className="copilot-compose" onSubmit={send}><textarea aria-label="运营问题" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="问一个运营问题…" rows={2} /><button type="submit" disabled={isLoading}>{isLoading ? "分析中…" : <><span>发送</span><ArrowUp size={16} aria-hidden /></>}</button></form>
     <p className="copilot-disclaimer">{agentMode === "agent" ? "回答由服务端 Agent 生成，仍需人工复核后执行。" : "回答基于示例数据，不构成真实经营结论或自动执行指令。"}</p>
   </aside></>;
 }

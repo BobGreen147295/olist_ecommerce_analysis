@@ -54,7 +54,7 @@ export default function OverviewPage() {
   const money = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
   return <main className="page-content overview-page">
     <section className="command-hero">
-      <div className="command-copy"><p className="eyebrow">Revenue intelligence</p><h1>今天，先做这件事。</h1></div>
+      <div className="command-copy"><p className="eyebrow">Revenue intelligence</p><h1><span>今天，先做</span><span>这件事。</span></h1></div>
       <div className="command-brief"><p>从 Shopify 聚合数据中识别优先级，生成可审批的实验方案，并跟踪真实增量。</p><div className="command-actions"><Link className="button button-primary" href="/campaigns">新建活动 <span aria-hidden>↗</span></Link><span className="live-label"><i /> 数据已同步</span></div></div>
     </section>
     <section className="notice-bar"><span className="notice-dot" />{summary ? isDevelopmentStore ? `已接入 Shopify 开发店汇总数据：${shopify?.shop_domain}。仅用于同步验证，不会解锁真实机会或客户触达。` : `已接入 Shopify 授权汇总数据：${shopify?.shop_domain}。以下计数为真实数据；机会队列仍明确标为合成演示场景，二者不会混用。` : `当前是${workspace.mode}：展示数据来自 ${workspace.dataSource}，不会向任何真实客户发送触达。`}</section>
