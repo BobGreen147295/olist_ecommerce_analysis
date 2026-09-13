@@ -306,6 +306,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   --motion-fast: 140ms;
   --motion-base: 260ms;
   --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --font-ui: "Segoe UI Variable Text", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-data: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 }
 
 html { color-scheme: dark; background: var(--canvas); }
@@ -317,8 +320,30 @@ body {
     linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
     var(--canvas);
   background-size: auto, 48px 48px, 48px 48px, auto;
+  font-family: var(--font-ui);
   font-size: 15px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
 }
+
+h1, h2, h3, .brand, .metric-value, .readiness-score, .opportunity-score > strong, .decision-index strong {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+.brand { letter-spacing: -.025em; }
+.page-heading h1 { font-weight: 640; line-height: 1.08; letter-spacing: -.025em; }
+.command-copy h1 { font-weight: 620; line-height: 1.02; letter-spacing: -.035em; }
+.card h2, .card h3, .section-heading h2, .opportunity-main h2, .pilot-hero h1, .pilot-steps h2, .pilot-fit h2, .pilot-application h2, .copilot-header h2, .connector-modal-header h2 {
+  line-height: 1.25;
+  letter-spacing: -.018em;
+}
+.metric-value, .readiness-score, .opportunity-score > strong, .decision-index strong {
+  letter-spacing: -.035em;
+}
+.eyebrow, .metric-label, .nav-copy small, .workspace-switcher small, .table-head, .card-kicker {
+  font-family: var(--font-data);
+}
+button, input, select, textarea { font-family: inherit; }
 
 ::selection { color: var(--brand-ink); background: var(--brand); }
 button, a { touch-action: manipulation; }
@@ -372,11 +397,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 .page-content { max-width: 1460px; padding: clamp(36px, 4.4vw, 68px) clamp(22px, 4vw, 62px) 80px; }
 .page-heading { margin-bottom: 38px; }
-.page-heading h1 { color: var(--ink); font-size: clamp(38px, 4vw, 58px); font-weight: 600; letter-spacing: -.055em; }
+.page-heading h1 { color: var(--ink); font-size: clamp(38px, 4vw, 58px); font-weight: 640; line-height: 1.08; letter-spacing: -.025em; }
 .page-description { max-width: 62ch; color: var(--muted); font-size: 14px; line-height: 1.7; }
 .eyebrow { color: var(--brand); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 10px; font-weight: 650; letter-spacing: .14em; }
 .command-hero { min-height: 310px; padding: 20px 0 56px; }
-.command-copy h1 { max-width: 840px; color: var(--ink); font-size: clamp(54px, 6.2vw, 88px); font-weight: 570; line-height: .94; letter-spacing: -.075em; }
+.command-copy h1 { max-width: 840px; color: var(--ink); font-size: clamp(54px, 6.2vw, 88px); font-weight: 620; line-height: 1.02; letter-spacing: -.035em; }
 .command-copy h1 span { display: block; white-space: nowrap; }
 .command-brief > p { color: #9aa7a2; font-size: 14px; }
 .command-actions .button { min-height: 46px; }
@@ -489,6 +514,27 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .pilot-hero > p:not(.eyebrow) { color: var(--muted); }
 .pilot-fit article:last-child { background: rgba(255,255,255,.018); }
 
+/* Typography refinement: calm Chinese rhythm, crisp data, one consistent voice. */
+.card h2, .card h3, .section-heading h2, .opportunity-main h2,
+.pilot-steps h2, .pilot-fit h2, .pilot-application h2, .copilot-header h2,
+.connector-modal-header h2, .aggregate-signal-list strong {
+  font-family: var(--font-display);
+  line-height: 1.28;
+  letter-spacing: -.018em;
+}
+.eyebrow, .metric-label, .card-kicker, .table-head, .status-badge,
+.nav-copy small, .scope-grid span, .api-tag {
+  font-family: var(--font-ui);
+  letter-spacing: .075em;
+}
+.metric-value, .readiness-score, .opportunity-score > strong,
+.decision-index strong, .results-bars strong, .result-metrics strong {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -.025em;
+}
+.button, button, input, select, textarea { font-family: var(--font-ui); }
+
 @keyframes cockpit-enter { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 .page-content > :first-child { animation: cockpit-enter 420ms var(--ease-out) both; }
 .page-content > :nth-child(2) { animation: cockpit-enter 420ms 60ms var(--ease-out) both; }
@@ -498,6 +544,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .metrics-grid .metric-card:nth-child(4) { animation-delay: 135ms; }
 
 @media (max-width: 980px) {
+  .app-shell { grid-template-columns: 1fr; }
   .sidebar { width: min(304px, 88vw); }
   .mobile-nav-open { min-width: 44px; min-height: 44px; color: var(--ink); background: rgba(255,255,255,.045); border: 1px solid var(--line); }
   .nav-scrim { background: rgba(0,0,0,.65); }
@@ -512,7 +559,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .page-content { padding: 30px 16px 56px; }
   .overview-page { padding-top: 32px; }
   .command-hero { min-height: 0; padding-top: 10px; }
-  .command-copy h1 { font-size: clamp(42px, 12.4vw, 50px); letter-spacing: -.065em; }
+  .command-copy h1 { font-size: clamp(42px, 12vw, 50px); letter-spacing: -.025em; }
   .command-brief > p, .page-description { font-size: 14px; line-height: 1.65; }
   .metrics-grid { border-radius: 7px; }
   .metric-card { min-height: 146px; padding: 18px; }
