@@ -819,8 +819,11 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         try:
-            from src.agent.task_store import record_observed_result
             session = _require_session()
+        except ValueError:
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        try:
+            from src.agent.task_store import record_observed_result
             payload = request.get_json(silent=True) or {}
             task = record_observed_result(
                 task_id,
