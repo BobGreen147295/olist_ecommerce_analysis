@@ -814,6 +814,35 @@ def create_app() -> Flask:
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
+    @app.route("/v1/tasks/<task_id>/observed-result", methods=["POST", "OPTIONS"])
+    def record_task_observed_result(task_id: str) -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            from src.agent.task_store import record_observed_result
+            session = _require_session()
+            payload = request.get_json(silent=True) or {}
+            task = record_observed_result(
+                task_id,
+                treatment_users=int(payload.get("treatment_users", 0)),
+                treatment_orders=int(payload.get("treatment_orders", 0)),
+                treatment_revenue=float(payload.get("treatment_revenue", 0)),
+                control_users=int(payload.get("control_users", 0)),
+                control_orders=int(payload.get("control_orders", 0)),
+                control_revenue=float(payload.get("control_revenue", 0)),
+                cost=float(payload.get("cost", 0)),
+                currency=payload.get("currency", "USD"),
+                revenue_net_of_refunds=payload.get("revenue_net_of_refunds") is True,
+                owner=session["username"],
+            )
+            if task is None:
+                return jsonify({"error": "未找到当前账号的活动任务"}), 404
+            return jsonify({"task": task})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
+
     @app.route("/v1/data-sources/csv/preview", methods=["POST", "OPTIONS"])
     def preview_csv_source() -> Any:
         if request.method == "OPTIONS":

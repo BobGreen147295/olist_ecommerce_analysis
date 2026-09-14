@@ -11,6 +11,7 @@
 | `GET /v1/tasks` | 读取当前账号的真实机会草案 | workspace member |
 | `POST /v1/tasks/{id}/confirm` | 人工确认渠道、预算、市场、语言和归因窗口 | workspace member |
 | `GET /v1/tasks/{id}/execution-package.csv` | 导出不含客户身份与联系方式的手工执行包 | workspace member |
+| `POST /v1/tasks/{id}/observed-result` | 回传已确认执行包的分组汇总结果并计算归因 | workspace member |
 | `GET /api/v1/experiments/{id}/results` | 观测指标、对照组、归因假设 | workspace member |
 | `GET /api/v1/data-connections` | 各数据域授权与同步状态 | workspace admin |
 

@@ -79,12 +79,13 @@ export default function CampaignsPage() {
     <PageHeading eyebrow="Campaign workspace" title="活动工作台" description="将真实机会转换为可审核的执行包；任何客户触达仍由商家在自己的渠道平台最终确认。" />
 
     <section className="card real-campaign-card" aria-labelledby="real-campaign-title">
-      <div className="real-campaign-head"><div><p className="eyebrow">REAL PILOT WORKFLOW</p><h2 id="real-campaign-title">真实商家执行包</h2><p>只读取当前账号下通过营销同意门禁的再激活草案，不导出客户身份或联系方式。</p></div><StatusBadge tone={realTask?.status === "confirmed" ? "success" : "accent"}>{realTask?.status === "confirmed" ? "已确认" : "人工门禁"}</StatusBadge></div>
+      <div className="real-campaign-head"><div><p className="eyebrow">REAL PILOT WORKFLOW</p><h2 id="real-campaign-title">真实商家执行包</h2><p>只读取当前账号下通过营销同意门禁的再激活草案，不导出客户身份或联系方式。</p></div><StatusBadge tone={["confirmed", "completed"].includes(realTask?.status ?? "") ? "success" : "accent"}>{realTask?.status === "completed" ? "已完成" : realTask?.status === "confirmed" ? "已确认" : "人工门禁"}</StatusBadge></div>
       {realState === "loading" && <div className="real-campaign-empty">正在读取真实活动草案…</div>}
       {realState === "signed-out" && <div className="real-campaign-empty"><strong>需要登录当前试点账号</strong><span>登录后才能读取该账号的真实机会草案。</span><Link className="button button-ghost" href="/data">前往数据连接</Link></div>}
       {realState === "empty" && <div className="real-campaign-empty"><strong>还没有可执行的真实草案</strong><span>{realMessage || "先在机会页用已同意营销的匿名订单生成再激活草案。"}</span><Link className="button button-ghost" href="/opportunities">前往真实机会</Link></div>}
       {realState === "ready" && realTask && <>
         <div className="real-campaign-summary"><div><span>机会</span><strong>{realTask.title}</strong></div><div><span>匿名受众定义</span><strong>{realTask.audience}</strong></div><div><span>衡量指标</span><strong>{realTask.expected_metric}</strong></div></div>
+        {realTask.status === "completed" ? <div className="real-campaign-empty"><strong>该执行包已完成结果回传</strong><span>真实归因结果已进入实验学习页。</span><Link className="button button-ghost" href="/learning">查看归因结果</Link></div> : <>
         <div className="form-grid real-campaign-form">
           <label>执行渠道<select value={form.channel} onChange={(event) => setForm({ ...form, channel: event.target.value })}><option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option><option value="manual">手工执行</option></select></label>
           <label>试点预算<input type="number" min="0" step="1" value={form.budget} onChange={(event) => setForm({ ...form, budget: event.target.value })} /></label>
@@ -95,6 +96,7 @@ export default function CampaignsPage() {
         <div className="execution-package-note"><strong>安全边界</strong><span>{realTask.consent_basis}</span><span>确认只生成手工交接文件，不会调用外部渠道或自动发送。</span></div>
         <div className="button-row"><button className="button button-primary" onClick={confirmRealTask}>{realTask.status === "confirmed" ? "重新确认参数" : "人工确认并生成执行包"}</button>{realTask.status === "confirmed" && <button className="button button-ghost" onClick={downloadExecutionPackage}>下载安全执行包 CSV</button>}</div>
         {realMessage && <p className="inline-success" role="status">{realMessage}</p>}
+        </>}
       </>}
     </section>
 

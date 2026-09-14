@@ -341,6 +341,62 @@ def get_manual_execution_package(
     }
 
 
+def record_observed_result(
+    task_id: str,
+    *,
+    treatment_users: int,
+    treatment_orders: int,
+    treatment_revenue: float,
+    control_users: int,
+    control_orders: int,
+    control_revenue: float,
+    cost: float,
+    currency: str,
+    revenue_net_of_refunds: bool,
+    path: Optional[Path] = None,
+    owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Store merchant-reported aggregate results for a confirmed manual handoff."""
+    from src.agent.evaluation import evaluate_experiment
+
+    tasks = load_tasks(path)
+    for task in tasks:
+        if task.get("task_id") != task_id or (owner is not None and task.get("owner") != owner):
+            continue
+        execution = task.get("execution") if isinstance(task.get("execution"), dict) else {}
+        if task.get("status") != "confirmed" or execution.get("mode") != "manual_handoff":
+            raise ValueError("只有已确认的手工执行包可以回传真实结果")
+        result = evaluate_experiment(
+            treatment_users=treatment_users,
+            treatment_orders=treatment_orders,
+            treatment_revenue=treatment_revenue,
+            control_users=control_users,
+            control_orders=control_orders,
+            control_revenue=control_revenue,
+            cost=cost,
+            currency=currency,
+            attribution_window_days=int(task.get("attribution_window_days") or 7),
+            measurement_mode="observed",
+            revenue_net_of_refunds=revenue_net_of_refunds,
+        )
+        result.update({
+            "source": "merchant_reported_aggregate",
+            "verification": "self_reported",
+        })
+        task["result"] = result
+        task["status"] = "completed"
+        task["updated_at"] = _now()
+        execution["status"] = "result_recorded"
+        execution["result_recorded_at"] = task["updated_at"]
+        task["execution"] = execution
+        if path is None and _use_database():
+            _db_save_task(task)
+        else:
+            save_tasks(tasks, path)
+        return task
+    return None
+
+
 def complete_task(
     task_id: str,
     result: dict[str, Any],
