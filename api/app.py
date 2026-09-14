@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import requests
-from flask import Flask, jsonify, redirect, request
+from flask import Flask, Response, jsonify, redirect, request
 
 
 MAX_MESSAGE_LENGTH = 1_500
@@ -747,6 +747,68 @@ def create_app() -> Flask:
             signal = get_reactivation_signal(session["username"])
             task = create_task(_reactivation_signal_draft(signal), source_diagnosis={"source": "consented_reactivation_aggregate"}, owner=session["username"])
             return jsonify({"task": task}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
+
+    @app.route("/v1/tasks", methods=["GET", "OPTIONS"])
+    def tasks() -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            from src.agent.task_store import load_tasks
+            session = _require_session()
+            return jsonify({"tasks": load_tasks(owner=session["username"])})
+        except ValueError:
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
+
+    @app.route("/v1/tasks/<task_id>/confirm", methods=["POST", "OPTIONS"])
+    def confirm_task_execution(task_id: str) -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            from src.agent.task_store import prepare_manual_execution
+            session = _require_session()
+            payload = request.get_json(silent=True) or {}
+            task = prepare_manual_execution(
+                task_id,
+                channel=payload.get("channel", ""),
+                budget=float(payload.get("budget", 0)),
+                market=payload.get("market", "GLOBAL"),
+                locale=payload.get("locale", "en"),
+                attribution_window_days=int(payload.get("attribution_window_days", 7)),
+                owner=session["username"],
+            )
+            if task is None:
+                return jsonify({"error": "未找到当前账号的活动草案"}), 404
+            return jsonify({"task": task})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
+
+    @app.route("/v1/tasks/<task_id>/execution-package.csv", methods=["GET", "OPTIONS"])
+    def export_task_execution_package(task_id: str) -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            from src.agent.task_store import get_manual_execution_package
+            session = _require_session()
+            package = get_manual_execution_package(task_id, owner=session["username"])
+            if package is None:
+                return jsonify({"error": "未找到当前账号的活动草案"}), 404
+            output = StringIO()
+            writer = csv.DictWriter(output, fieldnames=list(package))
+            writer.writeheader()
+            writer.writerow(package)
+            return Response(
+                "\ufeff" + output.getvalue(),
+                mimetype="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="revenueops-{task_id}-execution-package.csv"'},
+            )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except RuntimeError:

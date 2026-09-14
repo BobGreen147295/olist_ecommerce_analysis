@@ -242,8 +242,103 @@ def update_task(
     return None
 
 
-def get_task(task_id: str, path: Optional[Path] = None) -> Optional[dict[str, Any]]:
-    return next((task for task in load_tasks(path) if task.get("task_id") == task_id), None)
+def get_task(
+    task_id: str,
+    path: Optional[Path] = None,
+    owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    return next(
+        (task for task in load_tasks(path, owner=owner) if task.get("task_id") == task_id),
+        None,
+    )
+
+
+def prepare_manual_execution(
+    task_id: str,
+    *,
+    channel: str,
+    budget: float,
+    market: str,
+    locale: str,
+    attribution_window_days: int,
+    path: Optional[Path] = None,
+    owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Confirm a consented pilot task and prepare a contact-free handoff package."""
+    channel = str(channel).strip().lower()
+    market = str(market).strip().upper()
+    locale = str(locale).strip()
+    if channel not in {"email", "sms", "whatsapp", "manual"}:
+        raise ValueError("执行渠道必须是 email、sms、whatsapp 或 manual")
+    if float(budget) < 0:
+        raise ValueError("活动预算不能小于 0")
+    if not market or len(market) > 16:
+        raise ValueError("市场代码不能为空且最多 16 个字符")
+    if not locale or len(locale) > 32:
+        raise ValueError("语言代码不能为空且最多 32 个字符")
+    if not 1 <= int(attribution_window_days) <= 90:
+        raise ValueError("归因窗口必须是 1 到 90 天")
+
+    tasks = load_tasks(path)
+    for task in tasks:
+        if task.get("task_id") != task_id or (owner is not None and task.get("owner") != owner):
+            continue
+        if task.get("source_diagnosis", {}).get("source") != "consented_reactivation_aggregate":
+            raise ValueError("只有已通过营销同意门禁的再激活机会可以生成执行包")
+        if task.get("status") not in {"draft", "confirmed"}:
+            raise ValueError("只有草案或已确认任务可以生成执行包")
+        now = _now()
+        task.update({
+            "status": "confirmed",
+            "channel": channel,
+            "budget": float(budget),
+            "market": market,
+            "locale": locale,
+            "attribution_window_days": int(attribution_window_days),
+            "updated_at": now,
+            "execution": {
+                "package_id": f"pkg_{uuid.uuid4().hex[:10]}",
+                "mode": "manual_handoff",
+                "status": "ready_for_export",
+                "confirmed_at": now,
+            },
+        })
+        if path is None and _use_database():
+            _db_save_task(task)
+        else:
+            save_tasks(tasks, path)
+        return task
+    return None
+
+
+def get_manual_execution_package(
+    task_id: str,
+    *,
+    path: Optional[Path] = None,
+    owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    task = get_task(task_id, path=path, owner=owner)
+    if task is None:
+        return None
+    execution = task.get("execution") if isinstance(task.get("execution"), dict) else {}
+    if task.get("status") != "confirmed" or execution.get("mode") != "manual_handoff":
+        raise ValueError("请先人工确认活动参数，再导出执行包")
+    return {
+        "package_id": execution["package_id"],
+        "task_id": task["task_id"],
+        "title": task.get("title", ""),
+        "audience_definition": task.get("audience", ""),
+        "channel": task.get("channel", ""),
+        "budget": task.get("budget", 0),
+        "market": task.get("market", "GLOBAL"),
+        "locale": task.get("locale", "en"),
+        "attribution_window_days": task.get("attribution_window_days", 7),
+        "expected_metric": task.get("expected_metric", ""),
+        "consent_basis": task.get("consent_basis", ""),
+        "actions": " | ".join(str(item) for item in task.get("actions", [])),
+        "execution_mode": "manual_handoff",
+        "customer_contact_data": "not_included",
+    }
 
 
 def complete_task(
