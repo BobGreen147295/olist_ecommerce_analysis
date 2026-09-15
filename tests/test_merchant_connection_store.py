@@ -24,6 +24,7 @@ def main() -> None:
                 list_connection_summaries,
                 save_shopify_sync_summary,
                 save_shopify_connection,
+                update_shopify_connection_tokens,
             )
 
             state = issue_authorization_state("merchant-a", "demo-shop.myshopify.com")
@@ -35,13 +36,24 @@ def main() -> None:
             except ValueError:
                 pass
 
-            save_shopify_connection(context["workspace_id"], context["shop_domain"], "shpat_test_secret", ["read_orders"])
+            save_shopify_connection(
+                context["workspace_id"], context["shop_domain"], "shpat_test_secret", ["read_orders"],
+                refresh_token="shprt_test_secret", expires_in=3600, refresh_token_expires_in=7200,
+            )
             assert list_connection_summaries("merchant-b") == []
             summary = list_connection_summaries("merchant-a")
             assert summary[0]["shop_domain"] == "demo-shop.myshopify.com"
             assert "shpat_test_secret" not in repr(summary)
             internal_connection = get_shopify_connection_for_sync("merchant-a")
             assert internal_connection["access_token"] == "shpat_test_secret"
+            assert internal_connection["refresh_token"] == "shprt_test_secret"
+            assert internal_connection["access_token_expires_at"]
+            update_shopify_connection_tokens(
+                internal_connection["connection_id"], "shpat_rotated", "shprt_rotated", 3600, 7200,
+            )
+            internal_connection = get_shopify_connection_for_sync("merchant-a")
+            assert internal_connection["access_token"] == "shpat_rotated"
+            assert internal_connection["refresh_token"] == "shprt_rotated"
             sync = save_shopify_sync_summary(context["workspace_id"], context["shop_domain"], {
                 "orders": 4, "customers": 3, "products": 2, "inventory_items": 6,
                 "currency_code": "USD", "is_development_store": True, "order_trend": {"window_days": 30, "days": []},
