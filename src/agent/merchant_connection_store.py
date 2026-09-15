@@ -31,6 +31,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
+def _expires_at(seconds: Any) -> str | None:
+    try:
+        lifetime = int(seconds)
+    except (TypeError, ValueError):
+        return None
+    if lifetime <= 0:
+        return None
+    return (datetime.now(timezone.utc) + timedelta(seconds=lifetime)).isoformat(timespec="seconds")
+
+
 def _sync_retention_cutoff() -> str:
     """Keep only the recent aggregate history needed for trend comparisons."""
     return (datetime.now(timezone.utc) - timedelta(days=_SYNC_RETENTION_DAYS)).isoformat(timespec="microseconds")
@@ -120,6 +130,22 @@ def _ensure_schema() -> None:
             "CREATE INDEX IF NOT EXISTS idx_merchant_connections_workspace "
             "ON merchant_connections (workspace_id, provider, status)"
         )
+        token_columns = {
+            "encrypted_refresh_token": "TEXT",
+            "access_token_expires_at": "VARCHAR(40)",
+            "refresh_token_expires_at": "VARCHAR(40)",
+        }
+        if placeholder == "%s":
+            for column, column_type in token_columns.items():
+                cursor.execute(
+                    f"ALTER TABLE merchant_connections ADD COLUMN IF NOT EXISTS {column} {column_type}"
+                )
+        else:
+            cursor.execute("PRAGMA table_info(merchant_connections)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            for column, column_type in token_columns.items():
+                if column not in existing_columns:
+                    cursor.execute(f"ALTER TABLE merchant_connections ADD COLUMN {column} {column_type}")
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS merchant_terms_acceptances (
@@ -276,12 +302,27 @@ def consume_authorization_state(raw_state: str) -> dict[str, str]:
         conn.close()
 
 
-def save_shopify_connection(workspace_id: str, shop_domain: str, access_token: str, granted_scopes: list[str]) -> None:
+def save_shopify_connection(
+    workspace_id: str,
+    shop_domain: str,
+    access_token: str,
+    granted_scopes: list[str],
+    *,
+    refresh_token: str | None = None,
+    expires_in: Any = None,
+    refresh_token_expires_in: Any = None,
+) -> None:
     """保存商家授权后的令牌密文；调用方不得记录 access_token。"""
     normalized_shop = shop_domain.strip().lower()
     if not _SHOP_DOMAIN.fullmatch(normalized_shop) or not access_token:
         raise ValueError("Shopify 连接参数无效")
     encrypted_token = _cipher().encrypt(access_token.encode("utf-8")).decode("ascii")
+    encrypted_refresh_token = (
+        _cipher().encrypt(refresh_token.encode("utf-8")).decode("ascii")
+        if refresh_token else None
+    )
+    access_token_expires_at = _expires_at(expires_in)
+    refresh_token_expires_at = _expires_at(refresh_token_expires_in)
     _ensure_schema()
     conn, placeholder = _connect_database()
     try:
@@ -289,12 +330,17 @@ def save_shopify_connection(workspace_id: str, shop_domain: str, access_token: s
         now = _now()
         cursor.execute(
             f"INSERT INTO merchant_connections "
-            f"(connection_id, workspace_id, provider, shop_domain, encrypted_access_token, granted_scopes, status, created_at, updated_at) "
-            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}) "
+            f"(connection_id, workspace_id, provider, shop_domain, encrypted_access_token, encrypted_refresh_token, "
+            f"access_token_expires_at, refresh_token_expires_at, granted_scopes, status, created_at, updated_at) "
+            f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, "
+            f"{placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}) "
             f"ON CONFLICT (workspace_id, provider, shop_domain) DO UPDATE SET "
-            f"encrypted_access_token = EXCLUDED.encrypted_access_token, granted_scopes = EXCLUDED.granted_scopes, "
+            f"encrypted_access_token = EXCLUDED.encrypted_access_token, encrypted_refresh_token = EXCLUDED.encrypted_refresh_token, "
+            f"access_token_expires_at = EXCLUDED.access_token_expires_at, refresh_token_expires_at = EXCLUDED.refresh_token_expires_at, "
+            f"granted_scopes = EXCLUDED.granted_scopes, "
             f"status = EXCLUDED.status, updated_at = EXCLUDED.updated_at",
             (uuid.uuid4().hex[:24], workspace_id, "shopify", normalized_shop, encrypted_token,
+             encrypted_refresh_token, access_token_expires_at, refresh_token_expires_at,
              ",".join(sorted(set(granted_scopes))), "connected", now, now),
         )
         conn.commit()
@@ -334,7 +380,8 @@ def get_shopify_connection_for_sync(owner_username: str) -> dict[str, str]:
     try:
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT connection_id, shop_domain, encrypted_access_token FROM merchant_connections "
+            f"SELECT connection_id, shop_domain, encrypted_access_token, encrypted_refresh_token, access_token_expires_at "
+            f"FROM merchant_connections "
             f"WHERE workspace_id = {placeholder} AND provider = {placeholder} AND status IN ('connected', 'synced') "
             f"ORDER BY updated_at DESC LIMIT 1",
             (workspace["workspace_id"], "shopify"),
@@ -345,9 +392,49 @@ def get_shopify_connection_for_sync(owner_username: str) -> dict[str, str]:
             raise ValueError("尚未连接 Shopify 店铺")
         try:
             token = _cipher().decrypt(row[2].encode("ascii")).decode("utf-8")
+            refresh_token = (
+                _cipher().decrypt(row[3].encode("ascii")).decode("utf-8")
+                if row[3] else None
+            )
         except (InvalidToken, UnicodeDecodeError) as exc:
             raise RuntimeError("Shopify 授权令牌无法解密，请重新授权") from exc
-        return {"workspace_id": workspace["workspace_id"], "connection_id": row[0], "shop_domain": row[1], "access_token": token}
+        return {
+            "workspace_id": workspace["workspace_id"], "connection_id": row[0], "shop_domain": row[1],
+            "access_token": token, "refresh_token": refresh_token, "access_token_expires_at": row[4],
+        }
+    finally:
+        conn.close()
+
+
+def update_shopify_connection_tokens(
+    connection_id: str,
+    access_token: str,
+    refresh_token: str,
+    expires_in: Any,
+    refresh_token_expires_in: Any = None,
+) -> None:
+    """Atomically rotate encrypted Shopify tokens after a successful refresh."""
+    if not connection_id or not access_token or not refresh_token:
+        raise ValueError("Shopify 刷新令牌参数无效")
+    cipher = _cipher()
+    encrypted_access = cipher.encrypt(access_token.encode("utf-8")).decode("ascii")
+    encrypted_refresh = cipher.encrypt(refresh_token.encode("utf-8")).decode("ascii")
+    _ensure_schema()
+    conn, placeholder = _connect_database()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE merchant_connections SET encrypted_access_token = {placeholder}, "
+            f"encrypted_refresh_token = {placeholder}, access_token_expires_at = {placeholder}, "
+            f"refresh_token_expires_at = {placeholder}, updated_at = {placeholder} "
+            f"WHERE connection_id = {placeholder}",
+            (encrypted_access, encrypted_refresh, _expires_at(expires_in),
+             _expires_at(refresh_token_expires_in), _now(), connection_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("Shopify 连接不存在")
+        conn.commit()
+        cursor.close()
     finally:
         conn.close()
 
