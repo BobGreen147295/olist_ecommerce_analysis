@@ -45,6 +45,7 @@ query RevenueOpsInitialSummary {
 """
 SHOPIFY_TREND_PAGE_SIZE = 50
 SHOPIFY_TREND_MAX_ORDERS = 1_000
+SHOPIFY_TOKEN_REFRESH_BUFFER = timedelta(minutes=5)
 SHOPIFY_ORDER_TREND_QUERY = """
 query RevenueOpsOrderTrend($first: Int!, $after: String, $query: String!) {
   orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT) {
@@ -77,6 +78,43 @@ def _shopify_safe_order_csv(nodes: list[dict[str, Any]]) -> bytes:
             "granted" if consent == "SUBSCRIBED" else "unknown",
         ])
     return output.getvalue().encode("utf-8")
+
+
+def _shopify_refresh_access_token(connection: dict[str, Any]) -> dict[str, Any]:
+    """Refresh an expiring offline token shortly before it expires."""
+    expires_at = connection.get("access_token_expires_at")
+    refresh_token = connection.get("refresh_token")
+    if not expires_at or not refresh_token:
+        return connection
+    try:
+        expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError("Shopify 令牌有效期无效，请重新授权") from exc
+    if expiry > datetime.now(timezone.utc) + SHOPIFY_TOKEN_REFRESH_BUFFER:
+        return connection
+    response = requests.post(
+        f"https://{connection['shop_domain']}/admin/oauth/access_token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": os.environ["SHOPIFY_CLIENT_ID"],
+            "client_secret": os.environ["SHOPIFY_CLIENT_SECRET"],
+            "refresh_token": refresh_token,
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    new_access = payload.get("access_token")
+    new_refresh = payload.get("refresh_token")
+    expires_in = payload.get("expires_in")
+    if not isinstance(new_access, str) or not isinstance(new_refresh, str) or not expires_in:
+        raise RuntimeError("Shopify 未返回完整的刷新令牌")
+    from src.agent.merchant_connection_store import update_shopify_connection_tokens
+    update_shopify_connection_tokens(
+        connection["connection_id"], new_access, new_refresh, expires_in,
+        payload.get("refresh_token_expires_in"),
+    )
+    return {**connection, "access_token": new_access, "refresh_token": new_refresh}
 
 
 def _money_amount(value: Any) -> Decimal:
@@ -493,15 +531,21 @@ def create_app() -> Flask:
                 raise ValueError("授权店铺与发起店铺不一致")
             response = requests.post(
                 f"https://{context['shop_domain']}/admin/oauth/access_token",
-                data={"client_id": os.environ["SHOPIFY_CLIENT_ID"], "client_secret": os.environ["SHOPIFY_CLIENT_SECRET"], "code": arguments.get("code", "")},
+                data={"client_id": os.environ["SHOPIFY_CLIENT_ID"], "client_secret": os.environ["SHOPIFY_CLIENT_SECRET"], "code": arguments.get("code", ""), "expiring": "1"},
                 timeout=15,
             )
             response.raise_for_status()
             token_payload = response.json()
             access_token, scopes = token_payload.get("access_token"), token_payload.get("scope", "")
-            if not isinstance(access_token, str) or not access_token:
-                raise ValueError("Shopify 未返回有效访问令牌")
-            save_shopify_connection(context["workspace_id"], context["shop_domain"], access_token, scopes.split(","))
+            refresh_token = token_payload.get("refresh_token")
+            expires_in = token_payload.get("expires_in")
+            if not isinstance(access_token, str) or not access_token or not isinstance(refresh_token, str) or not expires_in:
+                raise ValueError("Shopify 未返回完整的可刷新访问令牌")
+            save_shopify_connection(
+                context["workspace_id"], context["shop_domain"], access_token, scopes.split(","),
+                refresh_token=refresh_token, expires_in=expires_in,
+                refresh_token_expires_in=token_payload.get("refresh_token_expires_in"),
+            )
             return redirect(f"{os.environ['PUBLIC_WEB_URL'].rstrip('/')}/data?shopify=connected", code=302)
         except (ValueError, requests.RequestException, RuntimeError):
             app.logger.exception("Shopify authorization callback failed")
@@ -550,7 +594,7 @@ def create_app() -> Flask:
         try:
             session = _require_session()
             from src.agent.merchant_connection_store import get_shopify_connection_for_sync, save_shopify_sync_summary
-            connection = get_shopify_connection_for_sync(session["username"])
+            connection = _shopify_refresh_access_token(get_shopify_connection_for_sync(session["username"]))
             response = requests.post(
                 f"https://{connection['shop_domain']}/admin/api/{SHOPIFY_API_VERSION}/graphql.json",
                 headers={"X-Shopify-Access-Token": connection["access_token"], "Content-Type": "application/json"},
