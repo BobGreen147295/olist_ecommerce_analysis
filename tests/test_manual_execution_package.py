@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.agent.task_store import create_task, get_manual_execution_package, prepare_manual_execution
+from src.agent.task_store import create_task, get_manual_execution_package, mark_manual_execution_started, prepare_manual_execution
 
 
 def test_manual_execution_package_excludes_customer_data() -> None:
@@ -28,10 +28,13 @@ def test_manual_execution_package_excludes_customer_data() -> None:
             attribution_window_days=14, path=path, owner="merchant-a",
         )
         package = get_manual_execution_package(task["task_id"], path=path, owner="merchant-a")
+        started = mark_manual_execution_started(task["task_id"], path=path, owner="merchant-a")
 
         assert confirmed and confirmed["status"] == "confirmed"
         assert package and package["customer_contact_data"] == "not_included"
         assert not {"email", "phone", "address", "customer_ids", "recipients"} & set(package)
+        assert started and started["execution"]["status"] == "in_progress"
+        assert started["execution"].get("started_at")
         assert get_manual_execution_package(task["task_id"], path=path, owner="merchant-b") is None
 
 

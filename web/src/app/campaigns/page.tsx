@@ -19,6 +19,7 @@ type RealTask = {
   expected_metric?: string;
   consent_basis?: string;
   source_diagnosis?: { source?: string };
+  execution?: { status?: "ready_for_export" | "in_progress" | "result_recorded"; started_at?: string };
 };
 
 export default function CampaignsPage() {
@@ -75,11 +76,23 @@ export default function CampaignsPage() {
     setRealMessage("执行包已下载。请在商家自己的渠道平台完成最终受众选择与发送。");
   }
 
+  async function startRealTask() {
+    if (!realTask || !API_BASE_URL) return;
+    const token = sessionStorage.getItem("revenueops_access_token");
+    if (!token) { setRealState("signed-out"); return; }
+    setRealMessage("正在记录人工启动…");
+    const response = await fetch(`${API_BASE_URL}/v1/tasks/${realTask.task_id}/start`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { setRealMessage(data.error ?? "无法记录启动状态，请稍后重试。"); return; }
+    setRealTask(data.task);
+    setRealMessage("已标记为实验中。这里只记录商家确认的启动时间，不会调用外部渠道或发送消息。");
+  }
+
   return <main className="page-content">
     <PageHeading eyebrow="Campaign workspace" title="活动工作台" description="将真实机会转换为可审核的执行包；任何客户触达仍由商家在自己的渠道平台最终确认。" />
 
     <section className="card real-campaign-card" aria-labelledby="real-campaign-title">
-      <div className="real-campaign-head"><div><p className="eyebrow">REAL PILOT WORKFLOW</p><h2 id="real-campaign-title">真实商家执行包</h2><p>只读取当前账号下通过营销同意门禁的再激活草案，不导出客户身份或联系方式。</p></div><StatusBadge tone={["confirmed", "completed"].includes(realTask?.status ?? "") ? "success" : "accent"}>{realTask?.status === "completed" ? "已完成" : realTask?.status === "confirmed" ? "已确认" : "人工门禁"}</StatusBadge></div>
+      <div className="real-campaign-head"><div><p className="eyebrow">REAL PILOT WORKFLOW</p><h2 id="real-campaign-title">真实商家执行包</h2><p>只读取当前账号下通过营销同意门禁的再激活草案，不导出客户身份或联系方式。</p></div><StatusBadge tone={["confirmed", "completed"].includes(realTask?.status ?? "") ? "success" : "accent"}>{realTask?.status === "completed" ? "已完成" : realTask?.execution?.status === "in_progress" ? "实验中" : realTask?.status === "confirmed" ? "已批准" : "人工门禁"}</StatusBadge></div>
       {realState === "loading" && <div className="real-campaign-empty">正在读取真实活动草案…</div>}
       {realState === "signed-out" && <div className="real-campaign-empty"><strong>需要登录当前试点账号</strong><span>登录后才能读取该账号的真实机会草案。</span><Link className="button button-ghost" href="/data">前往数据连接</Link></div>}
       {realState === "empty" && <div className="real-campaign-empty"><strong>还没有可执行的真实草案</strong><span>{realMessage || "先在机会页用已同意营销的匿名订单生成再激活草案。"}</span><Link className="button button-ghost" href="/opportunities">前往真实机会</Link></div>}
@@ -94,7 +107,7 @@ export default function CampaignsPage() {
           <label>归因窗口（天）<input type="number" min="1" max="90" value={form.attribution_window_days} onChange={(event) => setForm({ ...form, attribution_window_days: event.target.value })} /></label>
         </div>
         <div className="execution-package-note"><strong>安全边界</strong><span>{realTask.consent_basis}</span><span>确认只生成手工交接文件，不会调用外部渠道或自动发送。</span></div>
-        <div className="button-row"><button className="button button-primary" onClick={confirmRealTask}>{realTask.status === "confirmed" ? "重新确认参数" : "人工确认并生成执行包"}</button>{realTask.status === "confirmed" && <button className="button button-ghost" onClick={downloadExecutionPackage}>下载安全执行包 CSV</button>}</div>
+        <div className="button-row"><button className="button button-primary" onClick={confirmRealTask}>{realTask.status === "confirmed" ? "重新确认参数" : "人工确认并生成执行包"}</button>{realTask.status === "confirmed" && <button className="button button-ghost" onClick={downloadExecutionPackage}>下载安全执行包 CSV</button>}{realTask.status === "confirmed" && realTask.execution?.status !== "in_progress" && <button className="button button-ghost" onClick={startRealTask}>标记试点已开始</button>}{realTask.execution?.status === "in_progress" && <Link className="button button-ghost" href="/learning">回传汇总结果</Link>}</div>
         {realMessage && <p className="inline-success" role="status">{realMessage}</p>}
         </>}
       </>}

@@ -868,6 +868,22 @@ def create_app() -> Flask:
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
+    @app.route("/v1/tasks/<task_id>/start", methods=["POST", "OPTIONS"])
+    def start_task_manual_execution(task_id: str) -> Any:
+        if request.method == "OPTIONS":
+            return "", 204
+        try:
+            from src.agent.task_store import mark_manual_execution_started
+            session = _require_session()
+            task = mark_manual_execution_started(task_id, owner=session["username"])
+            if task is None:
+                return jsonify({"error": "未找到当前账号的活动草案"}), 404
+            return jsonify({"task": task})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
+
     @app.route("/v1/tasks/<task_id>/observed-result", methods=["POST", "OPTIONS"])
     def record_task_observed_result(task_id: str) -> Any:
         if request.method == "OPTIONS":

@@ -341,6 +341,35 @@ def get_manual_execution_package(
     }
 
 
+def mark_manual_execution_started(
+    task_id: str,
+    *,
+    path: Optional[Path] = None,
+    owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Record a merchant-confirmed manual start without calling an external channel."""
+    tasks = load_tasks(path)
+    for task in tasks:
+        if task.get("task_id") != task_id or (owner is not None and task.get("owner") != owner):
+            continue
+        execution = task.get("execution") if isinstance(task.get("execution"), dict) else {}
+        if task.get("status") != "confirmed" or execution.get("mode") != "manual_handoff":
+            raise ValueError("请先人工确认活动参数并生成手工执行包")
+        if execution.get("status") == "result_recorded":
+            raise ValueError("该任务已经完成结果回传")
+        now = _now()
+        execution["status"] = "in_progress"
+        execution["started_at"] = now
+        task["execution"] = execution
+        task["updated_at"] = now
+        if path is None and _use_database():
+            _db_save_task(task)
+        else:
+            save_tasks(tasks, path)
+        return task
+    return None
+
+
 def record_observed_result(
     task_id: str,
     *,
