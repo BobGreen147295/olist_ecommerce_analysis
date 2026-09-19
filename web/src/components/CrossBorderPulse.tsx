@@ -106,7 +106,7 @@ export function CrossBorderPulse() {
   );
   const selected = filtered.find((signal) => signal.id === selectedId) ?? filtered[0];
 
-  return <section className="pulse-section" aria-labelledby="cross-border-pulse-title">
+  return <section className="pulse-section" id="cross-border-pulse" aria-labelledby="cross-border-pulse-title">
     <header className="pulse-heading">
       <div>
         <p className="eyebrow"><Broadcast size={14} aria-hidden /> Cross-border pulse</p>
