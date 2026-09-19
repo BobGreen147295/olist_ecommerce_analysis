@@ -536,6 +536,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .button, button, input, select, textarea { font-family: var(--font-ui); }
 
 @keyframes cockpit-enter { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse-orbit { 0%, 100% { opacity: .45; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.06); } }
 .page-content > :first-child { animation: cockpit-enter 420ms var(--ease-out) both; }
 .page-content > :nth-child(2) { animation: cockpit-enter 420ms 60ms var(--ease-out) both; }
 .metrics-grid .metric-card { animation: cockpit-enter 380ms var(--ease-out) both; }
@@ -595,6 +596,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .pulse-heading > div > p:last-child { max-width: 58ch; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .pulse-provenance { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; color: #91a19b; font-size: 10px; line-height: 1.5; }
 .pulse-provenance svg { color: var(--brand); }
+.pulse-provenance-loading svg { animation: pulse-orbit 1.2s ease-in-out infinite; }
+.pulse-provenance-fallback svg { color: var(--warning); }
 .pulse-controls { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin: 26px 0 16px; padding-top: 18px; border-top: 1px solid var(--line); }
 .pulse-filters { display: flex; flex-wrap: wrap; gap: 7px; }
 .pulse-filters button { min-height: 44px; padding: 0 14px; color: #8e9b96; background: transparent; border: 1px solid var(--line); border-radius: 6px; transition: color var(--motion-fast), background var(--motion-fast), border-color var(--motion-fast); }

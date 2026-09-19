@@ -382,6 +382,16 @@ def create_app() -> Flask:
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
         return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1"})
 
+    @app.route("/v1/public-intelligence", methods=["GET", "OPTIONS"])
+    def public_intelligence() -> Any:
+        """Return reviewed public signals; this endpoint never reads merchant data."""
+        if request.method == "OPTIONS":
+            return "", 204
+        from src.agent.public_intelligence import get_public_intelligence
+        response = jsonify(get_public_intelligence())
+        response.headers["Cache-Control"] = "public, max-age=900"
+        return response
+
     @app.route("/v1/integrations/shopify/readiness", methods=["GET", "OPTIONS"])
     def shopify_readiness() -> Any:
         if request.method == "OPTIONS":

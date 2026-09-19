@@ -1,9 +1,24 @@
 "use client";
 
 import { ArrowUpRight, Broadcast, ShieldCheck } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const signals = [
+type Signal = {
+  id: string;
+  category: string;
+  market: string;
+  level: string;
+  date: string;
+  title: string;
+  summary: string;
+  action: string;
+  source: string;
+  href: string;
+  update_mode?: "reviewed" | "official_feed";
+};
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
+const fallbackSignals: Signal[] = [
   {
     id: "eu-low-value-duty",
     category: "合规",
@@ -52,7 +67,7 @@ const signals = [
     source: "European Central Bank",
     href: "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html",
   },
-] as const;
+];
 
 const categories = ["全部", "合规", "平台", "物流", "汇率"] as const;
 const markets = ["全部市场", "欧盟", "美国", "全球"] as const;
@@ -60,7 +75,31 @@ const markets = ["全部市场", "欧盟", "美国", "全球"] as const;
 export function CrossBorderPulse() {
   const [category, setCategory] = useState<(typeof categories)[number]>("全部");
   const [market, setMarket] = useState<(typeof markets)[number]>("全部市场");
-  const [selectedId, setSelectedId] = useState<string>(signals[0].id);
+  const [signals, setSignals] = useState<Signal[]>(fallbackSignals);
+  const [feedState, setFeedState] = useState<"loading" | "live" | "fallback">(API_BASE_URL ? "loading" : "fallback");
+  const [selectedId, setSelectedId] = useState<string>(fallbackSignals[0].id);
+
+  useEffect(() => {
+    if (!API_BASE_URL) return;
+    const controller = new AbortController();
+    fetch(`${API_BASE_URL}/v1/public-intelligence`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("public intelligence unavailable");
+        return response.json();
+      })
+      .then((payload) => {
+        const next = Array.isArray(payload?.signals) ? payload.signals.filter(isSignal) : [];
+        if (!next.length) throw new Error("public intelligence payload invalid");
+        setSignals(next);
+        setFeedState(payload.feed_status === "live" ? "live" : "fallback");
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setFeedState("fallback");
+      });
+    return () => controller.abort();
+  }, []);
+
   const filtered = signals.filter((signal) =>
     (category === "全部" || signal.category === category) &&
     (market === "全部市场" || signal.market === market || signal.market === "全球")
@@ -74,7 +113,7 @@ export function CrossBorderPulse() {
         <h2 id="cross-border-pulse-title">跨境经营雷达</h2>
         <p>把平台、合规、物流与汇率变化，翻译成商家今天能执行的最小动作。</p>
       </div>
-      <div className="pulse-provenance"><ShieldCheck size={17} aria-hidden /><span>仅使用公开来源<br />不读取客户级数据</span></div>
+      <div className={`pulse-provenance pulse-provenance-${feedState}`}><ShieldCheck size={17} aria-hidden /><span>{feedState === "live" ? "官方汇率源已刷新" : feedState === "loading" ? "正在检查官方源" : "已使用审核回退"}<br />仅用公开信息，不读取客户数据</span></div>
     </header>
 
     <div className="pulse-controls" aria-label="跨境情报筛选">
@@ -105,6 +144,13 @@ export function CrossBorderPulse() {
       </article>
     </div> : <div className="pulse-empty">当前筛选下暂无信号，请切换市场或类型。</div>}
 
-    <footer className="pulse-disclaimer">公开情报预览 · 更新时间以来源页面为准 · 仅供经营判断，不构成法律、税务或投资建议。</footer>
+    <footer className="pulse-disclaimer">汇率由结构化官方源自动更新；其他信号经人工核验后发布 · 仅供经营判断，不构成法律、税务或投资建议。</footer>
   </section>;
+}
+
+function isSignal(value: unknown): value is Signal {
+  if (!value || typeof value !== "object") return false;
+  const signal = value as Record<string, unknown>;
+  return ["id", "category", "market", "level", "date", "title", "summary", "action", "source", "href"]
+    .every((key) => typeof signal[key] === "string" && signal[key] !== "");
 }
