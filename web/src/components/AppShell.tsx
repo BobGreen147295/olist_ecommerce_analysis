@@ -67,7 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="topbar">
         <button className="mobile-nav-open" onClick={() => setNavOpen(true)} aria-label="打开导航" aria-expanded={navOpen}><List size={21} weight="bold" aria-hidden="true" /></button>
         <div className="breadcrumb"><span>Northstar Commerce</span><span className="slash">/</span><span>{currentPage?.label ?? "Revenue workspace"}</span></div>
-        <div className="topbar-actions"><span className="sync-status" role="status"><i /> 数据已同步</span><button className="icon-button" onClick={() => setCopilotOpen(true)} aria-label="打开 AI 智能问答" aria-expanded={copilotOpen}><Sparkle size={20} weight="fill" aria-hidden="true" /></button><Link href="/campaigns" className="primary-button">新建活动 <Plus size={17} weight="bold" aria-hidden="true" /></Link></div>
+        <div className="topbar-actions"><span className="sync-status" role="status"><i /> 服务在线</span><button className="icon-button" onClick={() => setCopilotOpen(true)} aria-label="打开 AI 智能问答" aria-expanded={copilotOpen}><Sparkle size={20} weight="fill" aria-hidden="true" /></button><Link href="/campaigns" className="primary-button">新建活动 <Plus size={17} weight="bold" aria-hidden="true" /></Link></div>
       </header>
       <div className="app-frame" id="main-content">{children}</div>
     </main>
