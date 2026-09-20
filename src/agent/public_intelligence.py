@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 import time
 from typing import Any, Callable
 from xml.etree import ElementTree
@@ -17,7 +18,12 @@ import requests
 
 
 ECB_DAILY_RATES_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
-CACHE_TTL_SECONDS = 60 * 60
+SHOPIFY_CHANGELOG_URL = "https://changelog.shopify.com/"
+CACHE_TTL_SECONDS = 15 * 60
+SHOPIFY_RELEVANCE_TERMS = (
+    "international", "market", "multi-currency", "shipping",
+    "tax", "dut", "customs", "checkout", "consent", "returns",
+)
 
 REVIEWED_SIGNALS: list[dict[str, str]] = [
     {
@@ -103,8 +109,92 @@ def _fetch_ecb_rates() -> tuple[str, dict[str, str]]:
     return _parse_ecb_rates(response.content)
 
 
+class _ShopifyChangelogParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.posts: list[dict[str, str]] = []
+        self._post: dict[str, str] | None = None
+        self._post_depth = 0
+        self._capture: str | None = None
+        self._capture_end: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = set((attributes.get("class") or "").split())
+        if tag == "div" and "changelog-post" in classes and self._post is None:
+            self._post = {"tag": attributes.get("data-tag") or ""}
+            self._post_depth = 1
+        elif self._post is not None and tag == "div":
+            self._post_depth += 1
+        if self._post is None:
+            return
+        if tag == "span" and "heading--5" in classes:
+            self._capture, self._capture_end = "date", "span"
+        elif tag == "a" and "post-block__link" in classes:
+            self._post["href"] = attributes.get("href") or ""
+            self._capture, self._capture_end = "title", "a"
+        elif tag == "div" and "post__content" in classes:
+            self._capture, self._capture_end = "summary", "div"
+
+    def handle_data(self, data: str) -> None:
+        if self._post is not None and self._capture:
+            self._post[self._capture] = f"{self._post.get(self._capture, '')} {data}".strip()
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._post is None:
+            return
+        if tag == self._capture_end:
+            self._capture = self._capture_end = None
+        if tag == "div":
+            self._post_depth -= 1
+            if self._post_depth == 0:
+                self.posts.append({key: " ".join(value.split()) for key, value in self._post.items()})
+                self._post = None
+
+
+def _parse_shopify_changelog(html: str, now: datetime | None = None) -> dict[str, str]:
+    parser = _ShopifyChangelogParser()
+    parser.feed(html)
+    relevant = next((post for post in parser.posts if any(
+        term in f"{post.get('tag', '')} {post.get('title', '')} {post.get('summary', '')}".lower()
+        for term in SHOPIFY_RELEVANCE_TERMS
+    )), None)
+    if not relevant or not all(relevant.get(key) for key in ("date", "title", "summary", "href")):
+        raise ValueError("Shopify changelog has no relevant dated post")
+    checked_at = now or datetime.now(timezone.utc)
+    published = datetime.strptime(
+        f"{relevant['date']} {checked_at.year}", "%B %d %Y",
+    ).replace(tzinfo=timezone.utc)
+    if published > checked_at:
+        published = published.replace(year=published.year - 1)
+    return {
+        "id": "shopify-changelog-live",
+        "category": "平台",
+        "market": "全球",
+        "level": "观察",
+        "date": published.date().isoformat(),
+        "title": relevant["title"],
+        "summary": relevant["summary"],
+        "action": "检查该更新是否影响当前市场、结账或履约配置；先在测试环境验证，再决定是否调整。",
+        "source": "Shopify Changelog",
+        "href": f"https://changelog.shopify.com{relevant['href']}",
+        "update_mode": "official_feed",
+    }
+
+
+def _fetch_shopify_changelog() -> dict[str, str]:
+    response = requests.get(
+        SHOPIFY_CHANGELOG_URL,
+        headers={"User-Agent": "OlistRevenueOps/1.0 public-intelligence"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    return _parse_shopify_changelog(response.text)
+
+
 def _build_public_intelligence(
     fetch_ecb: Callable[[], tuple[str, dict[str, str]]] = _fetch_ecb_rates,
+    fetch_shopify: Callable[[], dict[str, str]] = _fetch_shopify_changelog,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     checked_at = now or datetime.now(timezone.utc)
@@ -120,6 +210,15 @@ def _build_public_intelligence(
         )
     except (requests.RequestException, ElementTree.ParseError, ValueError, StopIteration):
         feed_status = "fallback"
+
+    try:
+        signals = [signal for signal in signals if signal["id"] != "shopify-disclosures"]
+        signals.append(fetch_shopify())
+        feed_status = "live"
+    except (requests.RequestException, ValueError):
+        pass
+
+    signals.sort(key=lambda signal: signal["date"], reverse=True)
 
     return {
         "generated_at": checked_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),

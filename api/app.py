@@ -389,7 +389,7 @@ def create_app() -> Flask:
             return "", 204
         from src.agent.public_intelligence import get_public_intelligence
         response = jsonify(get_public_intelligence())
-        response.headers["Cache-Control"] = "public, max-age=900"
+        response.headers["Cache-Control"] = "public, max-age=300"
         return response
 
     @app.route("/v1/integrations/shopify/readiness", methods=["GET", "OPTIONS"])

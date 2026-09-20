@@ -18,6 +18,7 @@ type Signal = {
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const fallbackSignals: Signal[] = [
   {
     id: "eu-low-value-duty",
@@ -77,12 +78,13 @@ export function CrossBorderPulse() {
   const [market, setMarket] = useState<(typeof markets)[number]>("全部市场");
   const [signals, setSignals] = useState<Signal[]>(fallbackSignals);
   const [feedState, setFeedState] = useState<"loading" | "live" | "fallback">(API_BASE_URL ? "loading" : "fallback");
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string>(fallbackSignals[0].id);
 
   useEffect(() => {
     if (!API_BASE_URL) return;
     const controller = new AbortController();
-    fetch(`${API_BASE_URL}/v1/public-intelligence`, { signal: controller.signal })
+    const refresh = () => fetch(`${API_BASE_URL}/v1/public-intelligence`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("public intelligence unavailable");
         return response.json();
@@ -92,12 +94,18 @@ export function CrossBorderPulse() {
         if (!next.length) throw new Error("public intelligence payload invalid");
         setSignals(next);
         setFeedState(payload.feed_status === "live" ? "live" : "fallback");
+        setCheckedAt(typeof payload.generated_at === "string" ? payload.generated_at : null);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setFeedState("fallback");
       });
-    return () => controller.abort();
+    refresh();
+    const interval = window.setInterval(refresh, REFRESH_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
   }, []);
 
   const filtered = signals.filter((signal) =>
@@ -113,7 +121,7 @@ export function CrossBorderPulse() {
         <h2 id="cross-border-pulse-title">跨境经营雷达</h2>
         <p>把平台、合规、物流与汇率变化，翻译成商家今天能执行的最小动作。</p>
       </div>
-      <div className={`pulse-provenance pulse-provenance-${feedState}`}><ShieldCheck size={17} aria-hidden /><span>{feedState === "live" ? "官方汇率源已刷新" : feedState === "loading" ? "正在检查官方源" : "已使用审核回退"}<br />仅用公开信息，不读取客户数据</span></div>
+      <div className={`pulse-provenance pulse-provenance-${feedState}`}><ShieldCheck size={17} aria-hidden /><span>{feedState === "live" ? "官方源已更新" : feedState === "loading" ? "正在检查官方源" : "已使用审核回退"}<br />{checkedAt ? `最近检查 ${formatCheckedAt(checkedAt)}` : "仅用公开信息，不读取客户数据"}</span></div>
     </header>
 
     <div className="pulse-controls" aria-label="跨境情报筛选">
@@ -153,4 +161,11 @@ function isSignal(value: unknown): value is Signal {
   const signal = value as Record<string, unknown>;
   return ["id", "category", "market", "level", "date", "title", "summary", "action", "source", "href"]
     .every((key) => typeof signal[key] === "string" && signal[key] !== "");
+}
+
+function formatCheckedAt(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "刚刚" : new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(date);
 }
