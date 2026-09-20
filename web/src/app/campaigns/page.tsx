@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeading, StatusBadge } from "@/components/Ui";
+import { useI18n } from "@/components/I18n";
 import { campaigns } from "@/lib/demo-data";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
@@ -23,6 +24,7 @@ type RealTask = {
 };
 
 export default function CampaignsPage() {
+  const { t } = useI18n();
   const [stage, setStage] = useState<"draft" | "review" | "saved">("draft");
   const [showResults, setShowResults] = useState(false);
   const [realTask, setRealTask] = useState<RealTask | null>(null);
@@ -89,7 +91,7 @@ export default function CampaignsPage() {
   }
 
   return <main className="page-content">
-    <PageHeading eyebrow="Campaign workspace" title="活动工作台" description="将真实机会转换为可审核的执行包；任何客户触达仍由商家在自己的渠道平台最终确认。" />
+    <PageHeading eyebrow="Campaign workspace" title={t("campaignsTitle")} description={t("campaignsDescription")} />
 
     <section className="card real-campaign-card" aria-labelledby="real-campaign-title">
       <div className="real-campaign-head"><div><p className="eyebrow">REAL PILOT WORKFLOW</p><h2 id="real-campaign-title">真实商家执行包</h2><p>只读取当前账号下通过营销同意门禁的再激活草案，不导出客户身份或联系方式。</p></div><StatusBadge tone={["confirmed", "completed"].includes(realTask?.status ?? "") ? "success" : "accent"}>{realTask?.status === "completed" ? "已完成" : realTask?.execution?.status === "in_progress" ? "实验中" : realTask?.status === "confirmed" ? "已批准" : "人工门禁"}</StatusBadge></div>

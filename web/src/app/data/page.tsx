@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeading, StatusBadge } from "@/components/Ui";
+import { useI18n } from "@/components/I18n";
 
 const sources = [["订单与客户历史","已接入","合成演示场景","仅用于产品流程验证"],["活动执行回执","未接入","Klaviyo / Braze","接入后才可判断真实触达"],["广告消耗与转化","未接入","Meta / Google Ads","接入后才可计算渠道 ROI"],["履约与退款成本","未接入","Shopify / ERP","接入后才可计算净利润"]];
 
@@ -45,6 +46,7 @@ async function sanitizeShopifyOrders(file: File) {
 }
 
 export default function DataPage() {
+  const { t } = useI18n();
   const [shopifyReadiness, setShopifyReadiness] = useState<ShopifyReadiness | null>(null);
   const [selected, setSelected] = useState<typeof connectors[number] | null>(null);
   const [accessToken, setAccessToken] = useState("");
@@ -180,7 +182,7 @@ export default function DataPage() {
   }
   const shopifyReady = shopifyReadiness?.state === "ready_to_authorize";
   const shopifyConnected = Boolean(shopifyConnection);
-  return <main className="page-content"><PageHeading eyebrow="Data foundation" title="数据连接" description="跨境商家的真实价值来自可授权的数据连接，而不是替代商家保存或猜测业务数据。" action={<button className="button button-primary" onClick={() => document.getElementById("connectors")?.scrollIntoView({ behavior: "smooth" })}>申请连接器</button>} />
+  return <main className="page-content"><PageHeading eyebrow="Data foundation" title={t("dataTitle")} description={t("dataDescription")} action={<button className="button button-primary" onClick={() => document.getElementById("connectors")?.scrollIntoView({ behavior: "smooth" })}>{t("requestConnector")}</button>} />
   <section className="notice-bar"><span className="notice-dot" />当前运行在示例工作区。连接真实店铺前，应由商家授权并明确数据范围、用途与保留周期。{shopifyConnected ? <strong> Shopify 已连接：{shopifyConnection?.shop_domain}{shopifyConnection?.last_synced_at ? " · 已完成汇总同步" : " · 等待首次同步"}</strong> : shopifyReadiness && <strong> Shopify OAuth：{shopifyReady ? "可开始授权" : "等待应用配置"}</strong>}</section>
   <section className="data-layout"><article className="card"><div className="card-kicker"><span>CONNECTION STATUS</span><StatusBadge tone="neutral">DEMO WORKSPACE</StatusBadge></div><h2>数据域覆盖</h2><div className="data-table">{sources.map(([name, state, source, note]) => <div className="data-row" key={name}><div><strong>{name}</strong><small>{note}</small></div><StatusBadge tone={state === "已接入" ? "success" : "neutral"}>{state}</StatusBadge><span>{source}</span></div>)}</div></article><aside className="card data-contract"><p className="eyebrow">Principles</p><h3>连接原则</h3><ol><li>商家在自己的渠道平台授权。</li><li>最小化获取字段与访问范围。</li><li>明确数据更新频率和失效机制。</li><li>每一项 Agent 建议都可追溯数据来源。</li></ol></aside></section>
   <section className="card api-card"><div><p className="eyebrow">NEXT MILESTONE</p><h2>{shopifyConnection?.summary ? shopifyConnection.summary.is_development_store ? "Shopify 开发店同步验证完成" : "Shopify 汇总数据已可用" : "从样本到真实商家数据"}</h2><p>{shopifyConnection?.summary ? `${shopifyConnection.summary.is_development_store ? "当前为 Shopify 开发店：只用于验证同步，不能解锁真实机会建模或客户触达。" : ""}已同步聚合计数：订单 ${shopifyConnection.summary.orders}、客户 ${shopifyConnection.summary.customers}、产品 ${shopifyConnection.summary.products}、库存项 ${shopifyConnection.summary.inventory_items}（最多读取 250 项）${shopifyConnection.summary.currency_code ? `（${shopifyConnection.summary.currency_code}）` : ""}。${shopifyConnection.summary.pilot_order_sync ? `匿名试点同步：${shopifyConnection.summary.pilot_order_sync.message}${shopifyConnection.summary.pilot_order_sync.state === "ready" ? ` 已同步 ${shopifyConnection.summary.pilot_order_sync.orders_synced ?? 0} 笔，已授予营销同意 ${shopifyConnection.summary.pilot_order_sync.consented_orders ?? 0} 笔。` : ""}` : ""}${shopifyConnection.comparison ? `较上次同步：订单 ${shopifyConnection.comparison.deltas.orders >= 0 ? "+" : ""}${shopifyConnection.comparison.deltas.orders}、客户 ${shopifyConnection.comparison.deltas.customers >= 0 ? "+" : ""}${shopifyConnection.comparison.deltas.customers}、产品 ${shopifyConnection.comparison.deltas.products >= 0 ? "+" : ""}${shopifyConnection.comparison.deltas.products}、库存项 ${shopifyConnection.comparison.deltas.inventory_items >= 0 ? "+" : ""}${shopifyConnection.comparison.deltas.inventory_items}。` : "当前为首次同步基线。"}未保存订单、客户、设备级原始数据。` : "第一阶段优先接入 Shopify 的汇总指标；不会保存邮箱、电话、地址、IP 或浏览器信息。"}</p></div><span className="api-tag">{shopifyConnection?.summary ? "AGGREGATES SYNCED" : "API CONTRACT READY"}</span></section>

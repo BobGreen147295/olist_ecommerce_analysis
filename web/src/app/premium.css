@@ -114,6 +114,34 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   backdrop-filter: blur(18px) saturate(150%);
   -webkit-backdrop-filter: blur(18px) saturate(150%);
 }
+
+.language-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.language-switch button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.language-switch button:hover { color: var(--ink); }
+.language-switch button.active { color: var(--brand-ink); background: var(--brand); }
+.language-switch button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+html[lang="en"] .command-hero { grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr); gap: clamp(32px, 4vw, 64px); }
+html[lang="en"] .command-copy h1 { font-size: clamp(48px, 5.2vw, 74px); }
+html[lang="en"] .command-copy h1 span { white-space: normal; }
 .breadcrumb { font-size: 12px; }
 .sync-status { display: flex; align-items: center; }
 .sync-status i { position: relative; }
@@ -242,6 +270,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 @media (max-width: 620px) {
+  html[lang="en"] .command-hero { grid-template-columns: 1fr; gap: 20px; }
+  html[lang="en"] .command-copy h1 { font-size: clamp(38px, 11vw, 44px); }
+  .language-switch { margin-left: auto; }
+  .language-switch button { min-height: 44px; padding-inline: 9px; }
   .topbar { height: 64px; padding-inline: 16px; }
   .breadcrumb { display: flex; }
   .breadcrumb .slash, .breadcrumb span:last-child, .sync-status, .topbar .icon-button { display: none; }

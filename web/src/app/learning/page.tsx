@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeading, StatusBadge } from "@/components/Ui";
+import { useI18n } from "@/components/I18n";
 import styles from "./learning-results.module.css";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
@@ -12,13 +13,14 @@ const initialForm = { treatment_users:"100", treatment_orders:"0", treatment_rev
 const money = (value:number, currency="USD") => new Intl.NumberFormat("zh-CN", { style:"currency", currency, maximumFractionDigits:0 }).format(value);
 
 export default function LearningPage() {
+  const { t } = useI18n();
   const [task,setTask]=useState<Task|null>(null); const [state,setState]=useState<"loading"|"signed-out"|"empty"|"ready">("loading");
   const [form,setForm]=useState(initialForm); const [message,setMessage]=useState(""); const [saving,setSaving]=useState(false);
   useEffect(()=>{ const token=sessionStorage.getItem("revenueops_access_token"); if(!token||!API_BASE_URL){Promise.resolve().then(()=>setState("signed-out"));return;}
     fetch(`${API_BASE_URL}/v1/tasks`,{headers:{Authorization:`Bearer ${token}`}}).then(async r=>r.ok?r.json():Promise.reject()).then(data=>{const realTask=(Array.isArray(data.tasks)?data.tasks:[]).find((item:Task)=>item.source_diagnosis?.source==="consented_reactivation_aggregate"&&item.execution?.mode==="manual_handoff"&&["confirmed","completed"].includes(item.status))??null;setTask(realTask);setState(realTask?"ready":"empty");if(realTask?.budget!=null)setForm(current=>({...current,cost:String(realTask.budget)}));}).catch(()=>{setState("empty");setMessage("暂时无法读取真实执行结果，请稍后重试。");}); },[]);
   async function submitResult(){if(!task||!API_BASE_URL)return;const token=sessionStorage.getItem("revenueops_access_token");if(!token){setState("signed-out");return;}setSaving(true);setMessage("正在计算归因结果…");const payload={...form,treatment_users:Number(form.treatment_users),treatment_orders:Number(form.treatment_orders),treatment_revenue:Number(form.treatment_revenue),control_users:Number(form.control_users),control_orders:Number(form.control_orders),control_revenue:Number(form.control_revenue),cost:Number(form.cost)};const response=await fetch(`${API_BASE_URL}/v1/tasks/${task.task_id}/observed-result`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify(payload)});const data=await response.json().catch(()=>({}));setSaving(false);if(!response.ok){setMessage(data.error??"结果回传失败。");return;}setTask(data.task);setMessage("已记录商家回传的分组汇总结果，未上传任何客户名单。");}
   const result=task?.result;
-  return <main className="page-content"><PageHeading eyebrow="Measurement & learning" title="实验学习" description="优先展示真实执行的商家汇总结果；演示数据始终独立标记。" />
+  return <main className="page-content"><PageHeading eyebrow="Measurement & learning" title={t("learningTitle")} description={t("learningDescription")} />
     <section className={`card ${styles.realPanel}`} aria-labelledby="real-result-heading"><div className={styles.panelHead}><div><p className="eyebrow">REAL PILOT RESULT</p><h2 id="real-result-heading">真实执行归因</h2><p>仅接收实验组与对照组的汇总数字，不接收客户身份或联系方式。</p></div><StatusBadge tone={result?"success":"accent"}>{result?"已回传":"待回传"}</StatusBadge></div>
       {state==="loading"&&<div className={styles.empty}>正在读取真实执行任务…</div>}
       {state==="signed-out"&&<div className={styles.empty}><strong>需要登录当前试点账号</strong><span>登录后才能读取该账号的执行结果。</span><Link className="button button-ghost" href="/data">前往数据连接</Link></div>}

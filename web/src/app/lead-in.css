@@ -30,6 +30,7 @@
 .lead-in-brand { display: flex; align-items: center; gap: 11px; font-family: var(--font-display, inherit); font-size: 18px; font-weight: 680; letter-spacing: -.02em; }
 .lead-in-brand > span { display: grid; width: 34px; height: 34px; place-items: center; color: #07110e; background: var(--lead-accent); border-radius: 8px; }
 .lead-in-status { display: flex; align-items: center; gap: 9px; color: #9cacA6; font-size: 12px; }
+.lead-in-actions { display: flex; align-items: center; gap: 14px; }
 .lead-in-status i { width: 7px; height: 7px; border-radius: 50%; background: var(--lead-accent); box-shadow: 0 0 0 5px rgba(104, 232, 190, .08); }
 
 .lead-in-layout { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, .92fr) minmax(480px, 1.08fr); align-items: center; gap: clamp(54px, 8vw, 132px); width: min(1440px, 100%); margin-inline: auto; padding: clamp(44px, 6vh, 76px) clamp(24px, 5vw, 76px); }

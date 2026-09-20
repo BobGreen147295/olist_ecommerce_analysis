@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageHeading, StatusBadge } from "@/components/Ui";
 import { LifecycleTask, OpportunityLifecycle } from "@/components/OpportunityLifecycle";
+import { useI18n } from "@/components/I18n";
 import { opportunities } from "@/lib/demo-data";
 
 const scoreFormula = "综合分 = 影响规模 35% + 增量潜力 30% + 置信度 20% + 可执行性 15%";
@@ -26,6 +27,7 @@ const evidenceById = {
 } as const;
 
 export default function OpportunitiesPage() {
+  const { t } = useI18n();
   const [initialConnection] = useState(readCachedConnection);
   const [selected, setSelected] = useState<string | null>(null);
   const [approved, setApproved] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export default function OpportunitiesPage() {
     setDraftMessage(response.ok ? "已创建再激活试点审核草案；未生成名单，未触达客户。" : (data.error ?? "无法创建审核草案，请稍后重试。"));
   }
   return <main className="page-content">
-    <PageHeading eyebrow="Evidence to outcome" title="机会与审核" description="把真实店铺信号转成可审核任务，并持续记录批准、执行与结果；合成演示与真实商家数据严格隔离。" />
+    <PageHeading eyebrow="Evidence to outcome" title={t("opportunitiesTitle")} description={t("opportunitiesDescription")} />
     <OpportunityLifecycle tasks={lifecycleTasks} state={lifecycleState} />
     {shopifySynced && <section className="notice-bar"><span className="notice-dot" />{shopifyDevelopmentStore ? "Shopify 开发店汇总数据已接入：仅用于验证同步，不能创建真实机会或客户触达。" : "Shopify 真实汇总数据已接入；本页下列机会仍是合成演示场景，不能创建真实客户触达。"}</section>}
     {!shopifyDevelopmentStore && storeOpportunities.length > 0 && <section className="card aggregate-opportunity-card"><div><p className="eyebrow">SHOPIFY AGGREGATE SIGNALS</p><h2>店铺级待核实信号</h2><p>仅基于已授权的按日订单汇总生成；不含客户、订单或联系方式，不能直接触达。</p></div><div className="aggregate-signal-list">{storeOpportunities.map((signal) => <article key={signal.id}><strong>{signal.title}</strong><span>{signal.summary}</span><small>需人工核实原因后再决定下一步。</small><button className="button button-ghost" onClick={() => createSignalDraft(signal.id)}>创建审核草案</button></article>)}{draftMessage && <p className="aggregate-draft-message">{draftMessage}</p>}</div></section>}

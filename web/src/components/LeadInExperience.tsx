@@ -9,6 +9,7 @@ import {
   Target,
 } from "@phosphor-icons/react";
 import { useEffect, useState, type PointerEvent } from "react";
+import { useI18n } from "./I18n";
 
 const stages = [
   {
@@ -41,6 +42,7 @@ const stages = [
 ] as const;
 
 export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
+  const { locale, setLocale, t } = useI18n();
   const [activeStage, setActiveStage] = useState(0);
   const [exiting, setExiting] = useState(false);
   const stage = stages[activeStage];
@@ -70,18 +72,18 @@ export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
     <div className="lead-in-grid" aria-hidden="true" />
     <header className="lead-in-header">
       <div className="lead-in-brand"><span><ChartLineUp size={18} weight="bold" aria-hidden /></span>RevenueOps</div>
-      <div className="lead-in-status" role="status"><i /> Shopify 数据连接就绪</div>
+      <div className="lead-in-actions"><div className="language-switch" role="group" aria-label={t("language")}><button className={locale === "zh-CN" ? "active" : ""} onClick={() => setLocale("zh-CN")} aria-pressed={locale === "zh-CN"}>{t("chinese")}</button><button className={locale === "en" ? "active" : ""} onClick={() => setLocale("en")} aria-pressed={locale === "en"}>{t("english")}</button></div><div className="lead-in-status" role="status"><i /> {t("introStatus")}</div></div>
     </header>
 
     <div className="lead-in-layout">
       <div className="lead-in-copy">
-        <p className="lead-in-kicker">收入决策操作系统</p>
-        <h1>从数据异常，<br />到可验证增长。</h1>
-        <p className="lead-in-summary">发现收入机会，设计可控实验，并用真实结果验证每一次增长决策。</p>
-        <button className="lead-in-cta" onClick={enterWorkspace}>进入 RevenueOps <ArrowRight size={18} weight="bold" aria-hidden /></button>
+        <p className="lead-in-kicker">{t("introKicker")}</p>
+        <h1>{t("introTitle1")}<br />{t("introTitle2")}</h1>
+        <p className="lead-in-summary">{t("introSummary")}</p>
+        <button className="lead-in-cta" onClick={enterWorkspace}>{t("enterWorkspace")} <ArrowRight size={18} weight="bold" aria-hidden /></button>
         <div className="lead-in-trust">
-          <span><ShieldCheck size={17} aria-hidden /> 所有行动需人工确认</span>
-          <span><CheckCircle size={17} aria-hidden /> 演示数据与真实数据明确隔离</span>
+          <span><ShieldCheck size={17} aria-hidden /> {t("humanApproval")}</span>
+          <span><CheckCircle size={17} aria-hidden /> {t("separatedData")}</span>
         </div>
       </div>
 
