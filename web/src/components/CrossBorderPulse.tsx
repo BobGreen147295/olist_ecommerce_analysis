@@ -2,6 +2,7 @@
 
 import { ArrowUpRight, Broadcast, ShieldCheck } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
+import { useI18n } from "./I18n";
 
 type Signal = {
   id: string;
@@ -70,10 +71,20 @@ const fallbackSignals: Signal[] = [
   },
 ];
 
+const englishFallbackSignals: Signal[] = [
+  { ...fallbackSignals[0], category: "Compliance", market: "EU", level: "High impact", title: "Temporary duty now applies to low-value EU imports", summary: "From July 1, 2026, imports valued at no more than €150 are subject to a temporary €3 duty under applicable tariff headings.", action: "Review landed cost, tariff classification, and checkout fee disclosures for EU orders.", source: "European Commission — Taxation and Customs Union" },
+  { ...fallbackSignals[1], category: "Platform", market: "Global", level: "Medium impact", title: "Shopify product information supports structured disclosures", summary: "Merchants can maintain product warnings and custom disclosures in Admin; supported themes surface them on product pages.", action: "For regulated products, audit disclosure fields, theme presentation, and custom storefront rendering.", source: "Shopify Changelog" },
+  { ...fallbackSignals[2], category: "Logistics", market: "United States", level: "Medium impact", title: "U.S.-bound cargo requires precise, identifiable descriptions", summary: "U.S. Customs provides accepted and rejected examples and expects descriptions that identify the product clearly.", action: "Audit English item descriptions in carrier templates and remove vague brand-only or shorthand descriptions.", source: "U.S. Customs and Border Protection" },
+  { ...fallbackSignals[3], category: "FX", market: "EU", level: "Watch", title: "ECB updates euro reference rates on working days", summary: "The ECB generally publishes euro reference rates against major currencies at around 16:00 CET on working days for information purposes.", action: "Use rate movement as a margin-sensitivity signal; rely on payment-channel execution data for pricing and settlement.", source: "European Central Bank" },
+];
+
 const categories = ["全部", "合规", "平台", "物流", "汇率"] as const;
 const markets = ["全部市场", "欧盟", "美国", "全球"] as const;
 
 export function CrossBorderPulse() {
+  const { locale } = useI18n();
+  const english = locale === "en";
+  const tx = (zh: string, en: string) => english ? en : zh;
   const [category, setCategory] = useState<(typeof categories)[number]>("全部");
   const [market, setMarket] = useState<(typeof markets)[number]>("全部市场");
   const [signals, setSignals] = useState<Signal[]>(fallbackSignals);
@@ -111,32 +122,32 @@ export function CrossBorderPulse() {
   const filtered = signals.filter((signal) =>
     (category === "全部" || signal.category === category) &&
     (market === "全部市场" || signal.market === market || signal.market === "全球")
-  );
+  ).map((signal) => english ? (englishFallbackSignals.find((item) => item.id === signal.id) ?? signal) : signal);
   const selected = filtered.find((signal) => signal.id === selectedId) ?? filtered[0];
 
   return <section className="pulse-section" id="cross-border-pulse" aria-labelledby="cross-border-pulse-title">
     <header className="pulse-heading">
       <div>
         <p className="eyebrow"><Broadcast size={14} aria-hidden /> Cross-border pulse</p>
-        <h2 id="cross-border-pulse-title">跨境经营雷达</h2>
-        <p>把平台、合规、物流与汇率变化，翻译成商家今天能执行的最小动作。</p>
+        <h2 id="cross-border-pulse-title">{tx("跨境经营雷达", "Cross-border operations radar")}</h2>
+        <p>{tx("把平台、合规、物流与汇率变化，翻译成商家今天能执行的最小动作。", "Turn platform, compliance, logistics, and FX changes into the smallest action a merchant can take today.")}</p>
       </div>
-      <div className={`pulse-provenance pulse-provenance-${feedState}`}><ShieldCheck size={17} aria-hidden /><span>{feedState === "live" ? "官方源已更新" : feedState === "loading" ? "正在检查官方源" : "已使用审核回退"}<br />{checkedAt ? `最近检查 ${formatCheckedAt(checkedAt)}` : "仅用公开信息，不读取客户数据"}</span></div>
+      <div className={`pulse-provenance pulse-provenance-${feedState}`}><ShieldCheck size={17} aria-hidden /><span>{feedState === "live" ? tx("官方源已更新", "Official feed updated") : feedState === "loading" ? tx("正在检查官方源", "Checking official feeds") : tx("已使用审核回退", "Reviewed fallback in use")}<br />{checkedAt ? `${tx("最近检查", "Last checked")} ${formatCheckedAt(checkedAt, locale)}` : tx("仅用公开信息，不读取客户数据", "Public information only; no customer data read")}</span></div>
     </header>
 
-    <div className="pulse-controls" aria-label="跨境情报筛选">
-      <div className="pulse-filters" aria-label="按类型筛选">
-        {categories.map((item) => <button key={item} type="button" aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}
+    <div className="pulse-controls" aria-label={tx("跨境情报筛选", "Cross-border intelligence filters")}>
+      <div className="pulse-filters" aria-label={tx("按类型筛选", "Filter by type")}>
+        {categories.map((item) => <button key={item} type="button" aria-pressed={category === item} onClick={() => setCategory(item)}>{english ? ({ "全部": "All", "合规": "Compliance", "平台": "Platform", "物流": "Logistics", "汇率": "FX" } as const)[item] : item}</button>)}
       </div>
-      <label className="pulse-market">市场
+      <label className="pulse-market">{tx("市场", "Market")}
         <select value={market} onChange={(event) => setMarket(event.target.value as (typeof markets)[number])}>
-          {markets.map((item) => <option key={item}>{item}</option>)}
+          {markets.map((item) => <option key={item} value={item}>{english ? ({ "全部市场": "All markets", "欧盟": "EU", "美国": "United States", "全球": "Global" } as const)[item] : item}</option>)}
         </select>
       </label>
     </div>
 
     {selected ? <div className="pulse-layout">
-      <div className="pulse-list" aria-label="公开经营信号">
+      <div className="pulse-list" aria-label={tx("公开经营信号", "Public operating signals")}>
         {filtered.map((signal) => <button key={signal.id} type="button" className={signal.id === selected.id ? "pulse-item pulse-item-active" : "pulse-item"} onClick={() => setSelectedId(signal.id)}>
           <span className="pulse-item-meta"><span>{signal.market}</span><time dateTime={signal.date}>{signal.date}</time></span>
           <strong>{signal.title}</strong>
@@ -147,12 +158,12 @@ export function CrossBorderPulse() {
         <div className="pulse-brief-meta"><span>{selected.level}</span><span>{selected.market} · {selected.category}</span></div>
         <h3>{selected.title}</h3>
         <p>{selected.summary}</p>
-        <div className="pulse-action"><span>建议动作</span><strong>{selected.action}</strong></div>
-        <a href={selected.href} target="_blank" rel="noreferrer">查看官方来源：{selected.source}<ArrowUpRight size={15} aria-hidden /></a>
+        <div className="pulse-action"><span>{tx("建议动作", "Recommended action")}</span><strong>{selected.action}</strong></div>
+        <a href={selected.href} target="_blank" rel="noreferrer">{tx("查看官方来源", "View official source")}: {selected.source}<ArrowUpRight size={15} aria-hidden /></a>
       </article>
-    </div> : <div className="pulse-empty">当前筛选下暂无信号，请切换市场或类型。</div>}
+    </div> : <div className="pulse-empty">{tx("当前筛选下暂无信号，请切换市场或类型。", "No signals match these filters. Try another market or type.")}</div>}
 
-    <footer className="pulse-disclaimer">汇率由结构化官方源自动更新；其他信号经人工核验后发布 · 仅供经营判断，不构成法律、税务或投资建议。</footer>
+    <footer className="pulse-disclaimer">{tx("汇率由结构化官方源自动更新；其他信号经人工核验后发布 · 仅供经营判断，不构成法律、税务或投资建议。", "FX rates update from structured official feeds; other signals are human-reviewed · For operational judgment only, not legal, tax, or investment advice.")}</footer>
   </section>;
 }
 
@@ -163,9 +174,9 @@ function isSignal(value: unknown): value is Signal {
     .every((key) => typeof signal[key] === "string" && signal[key] !== "");
 }
 
-function formatCheckedAt(value: string) {
+function formatCheckedAt(value: string, locale: "zh-CN" | "en") {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "刚刚" : new Intl.DateTimeFormat("zh-CN", {
+  return Number.isNaN(date.getTime()) ? (locale === "en" ? "just now" : "刚刚") : new Intl.DateTimeFormat(locale === "en" ? "en-US" : "zh-CN", {
     month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(date);
 }

@@ -11,7 +11,8 @@ import {
 import { useEffect, useState, type PointerEvent } from "react";
 import { useI18n } from "./I18n";
 
-const stages = [
+const stages = {
+  "zh-CN": [
   {
     label: "发现机会",
     icon: Target,
@@ -39,13 +40,33 @@ const stages = [
     detail: "把结果与对照组比较，保留可审计的决策证据。",
     metrics: [["实验状态", "已完成"], ["归因方法", "对照组"], ["数据类型", "合成演示"]],
   },
-] as const;
+  ],
+  en: [
+    {
+      label: "Find opportunity", icon: Target, title: "High-value dormant customers", value: "$18,420", valueLabel: "30-day opportunity estimate",
+      detail: "Identify customers whose repeat-purchase interval is growing despite strong historical value.",
+      metrics: [["Score", "86 / 100"], ["Evidence", "Orders and repeat trends"], ["Status", "Awaiting review"]],
+    },
+    {
+      label: "Design experiment", icon: Flask, title: "Small reactivation test", value: "14 days", valueLabel: "Observation window",
+      detail: "Validate incremental impact with a control group before increasing budget.",
+      metrics: [["Treatment", "100 people"], ["Control", "100 people"], ["Stop condition", "ROI < 0"]],
+    },
+    {
+      label: "Measure uplift", icon: ChartLineUp, title: "Revenue uplift attributed", value: "$6,820", valueLabel: "Demo incremental revenue",
+      detail: "Compare against the control group and preserve auditable decision evidence.",
+      metrics: [["Experiment", "Completed"], ["Attribution", "Control group"], ["Data type", "Synthetic demo"]],
+    },
+  ],
+} as const;
 
 export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
   const { locale, setLocale, t } = useI18n();
   const [activeStage, setActiveStage] = useState(0);
   const [exiting, setExiting] = useState(false);
-  const stage = stages[activeStage];
+  const localizedStages = stages[locale];
+  const stage = localizedStages[activeStage];
+  const english = locale === "en";
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -68,7 +89,7 @@ export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
     event.currentTarget.style.setProperty("--pointer-y", `${event.clientY - bounds.top}px`);
   }
 
-  return <section className={`lead-in ${exiting ? "lead-in-exiting" : ""}`} aria-label="RevenueOps 产品介绍">
+  return <section className={`lead-in ${exiting ? "lead-in-exiting" : ""}`} aria-label={english ? "RevenueOps product introduction" : "RevenueOps 产品介绍"}>
     <div className="lead-in-grid" aria-hidden="true" />
     <header className="lead-in-header">
       <div className="lead-in-brand"><span><ChartLineUp size={18} weight="bold" aria-hidden /></span>RevenueOps</div>
@@ -90,11 +111,11 @@ export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
       <article className="signal-console" onPointerMove={moveSpotlight}>
         <div className="signal-console-glow" aria-hidden="true" />
         <div className="signal-console-head">
-          <div><span>决策链路</span><strong>从信号到结果</strong></div>
-          <span className="signal-demo-label">合成演示</span>
+          <div><span>{english ? "Decision path" : "决策链路"}</span><strong>{english ? "From signal to outcome" : "从信号到结果"}</strong></div>
+          <span className="signal-demo-label">{english ? "Synthetic demo" : "合成演示"}</span>
         </div>
-        <div className="signal-tabs" role="tablist" aria-label="决策链路阶段">
-          {stages.map((item, index) => {
+        <div className="signal-tabs" role="tablist" aria-label={english ? "Decision path stages" : "决策链路阶段"}>
+          {localizedStages.map((item, index) => {
             const Icon = item.icon;
             return <button key={item.label} role="tab" aria-selected={index === activeStage} className={index === activeStage ? "signal-tab-active" : ""} onClick={() => setActiveStage(index)}>
               <Icon size={17} weight={index === activeStage ? "fill" : "regular"} aria-hidden />
@@ -111,7 +132,7 @@ export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
             {stage.metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
           </div>
         </div>
-        <div className="signal-progress" aria-hidden="true"><i style={{ width: `${((activeStage + 1) / stages.length) * 100}%` }} /></div>
+        <div className="signal-progress" aria-hidden="true"><i style={{ width: `${((activeStage + 1) / localizedStages.length) * 100}%` }} /></div>
       </article>
     </div>
 
