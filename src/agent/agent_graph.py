@@ -132,7 +132,8 @@ def _render_diagnosis(diagnosis: dict) -> str:
         if not isinstance(evidence, list):
             evidence = [evidence]
         for item in evidence:
-            lines.append(f"   - 证据：{item}")
+            text = f"{item.get('label', '指标')}：{item.get('value')}" if isinstance(item, dict) else item
+            lines.append(f"   - 证据：{text}")
         if finding.get("source"):
             lines.append(f"   - 来源：{finding['source']}")
         if finding.get("confidence") is not None:
@@ -262,7 +263,7 @@ def analyze_node(state: AgentState) -> dict:
 
 要求:
 1. 用中文输出
-2. 每条发现引用具体数据
+2. 每条发现引用具体数据；evidence 用 path 指定工具 data 中的字段路径（数组下标从 0 起），value 必须与原值一致，label 用可读名称。没有可核验字段时明确说明缺失，不编造引用。
 3. 客观描述，不要给出建议（建议由下游节点生成）
 4. 如果数据不足，明确指出缺少什么数据
 5. 如果是追问，聚焦于用户追问的细节，不必重复之前说过的全部内容
@@ -273,8 +274,8 @@ def analyze_node(state: AgentState) -> dict:
   "findings": [
     {{
       "title": "发现标题",
-      "evidence": ["具体指标和数值"],
-      "source": "工具名称或文件名",
+      "evidence": [{{"path": "0.total_sales", "value": 123.45, "label": "首个期间销售额"}}],
+      "source": "实际返回该数据的工具名称",
       "confidence": 0.0
     }}
   ]

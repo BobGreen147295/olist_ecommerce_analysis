@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import uuid
 from datetime import datetime, timezone
@@ -13,7 +14,25 @@ from typing import Any
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_LOG_PATH = PROJECT_DIR / "data" / "processed" / "agent_runs.jsonl"
-QUALITY_EVALUATION_VERSION = "qa_v1"
+QUALITY_EVALUATION_VERSION = "qa_v2"
+
+
+def _matches_data_reference(evidence: Any, data: Any) -> bool:
+    """Check a scalar against an explicit path in the current tool result."""
+    if not isinstance(evidence, dict) or not isinstance(evidence.get("path"), str) or "value" not in evidence:
+        return False
+    value = data
+    try:
+        for key in evidence["path"].split("."):
+            value = value[int(key)] if isinstance(value, list) else value[key]
+    except (KeyError, IndexError, ValueError, TypeError):
+        return False
+    expected = evidence["value"]
+    if isinstance(value, bool) or isinstance(expected, bool):
+        return False
+    if isinstance(value, (int, float)) and isinstance(expected, (int, float)):
+        return math.isfinite(value) and math.isfinite(expected) and value == expected
+    return isinstance(value, str) and isinstance(expected, str) and bool(value) and value == expected
 
 
 def _is_actionable(value: Any) -> bool:
@@ -23,12 +42,15 @@ def _is_actionable(value: Any) -> bool:
 
 
 def evaluate_response_quality(result: dict[str, Any]) -> dict[str, float | str]:
-    """根据真实结构化输出计算确定性质量分，不调用 LLM 自评。"""
+    """Score resolvable references and completeness, not semantic truth or causality."""
     diagnosis = result.get("diagnosis", {}) or {}
     findings = diagnosis.get("findings", []) if isinstance(diagnosis, dict) else []
     findings = findings if isinstance(findings, list) else []
     with_evidence = 0
     with_source = 0
+    with_evidence_text = 0
+    tool_results = result.get("tool_results", [])
+    tool_results = tool_results if isinstance(tool_results, list) else []
     for finding in findings:
         if not isinstance(finding, dict):
             continue
@@ -36,9 +58,14 @@ def evaluate_response_quality(result: dict[str, Any]) -> dict[str, float | str]:
         if not isinstance(evidence, list):
             evidence = [evidence]
         if any(str(item or "").strip() for item in evidence):
-            with_evidence += 1
-        if str(finding.get("source", "")).strip():
+            with_evidence_text += 1
+        sources = [item for item in tool_results if isinstance(item, dict) and item.get("success") is True
+                   and item.get("data") is not None and isinstance(finding.get("source"), str)
+                   and finding["source"] in (item.get("tool"), item.get("source")) and finding["source"].strip()]
+        if sources:
             with_source += 1
+        if evidence and any(all(_matches_data_reference(item, source["data"]) for item in evidence) for source in sources):
+            with_evidence += 1
     evidence_coverage = with_evidence / len(findings) if findings else 0.0
     source_citation_rate = with_source / len(findings) if findings else 0.0
 
@@ -62,6 +89,8 @@ def evaluate_response_quality(result: dict[str, Any]) -> dict[str, float | str]:
     quality_score = 0.45 * evidence_coverage + 0.25 * source_citation_rate + 0.30 * action_completeness
     return {
         "evaluation_version": QUALITY_EVALUATION_VERSION,
+        "score_kind": "reference_checks_and_completeness",
+        "structural_evidence_coverage": round(with_evidence_text / len(findings), 4) if findings else 0.0,
         "evidence_coverage": round(evidence_coverage, 4),
         "source_citation_rate": round(source_citation_rate, 4),
         "action_completeness": round(action_completeness, 4),

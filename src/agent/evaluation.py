@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 import re
+import math
 
 
 _CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
@@ -36,6 +37,14 @@ def evaluate_experiment(
         "control_revenue": control_revenue,
         "cost": cost,
     }
+    try:
+        invalid = any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in values.values())
+    except OverflowError:
+        invalid = True
+    if invalid:
+        raise ValueError("实验人数、订单、收入和成本必须是有限数字")
+    if any(value != int(value) for key, value in values.items() if key.endswith(("users", "orders"))):
+        raise ValueError("实验人数和订单数必须是整数")
     if any(value < 0 for value in values.values()):
         raise ValueError("实验人数、订单、收入和成本不能为负数")
     if treatment_users <= 0 or control_users <= 0:
@@ -45,7 +54,7 @@ def evaluate_experiment(
     currency = str(currency).upper().strip()
     if not _CURRENCY_PATTERN.fullmatch(currency):
         raise ValueError("币种必须是 3 位 ISO 4217 代码，例如 USD、GBP 或 EUR")
-    if not 1 <= int(attribution_window_days) <= 90:
+    if isinstance(attribution_window_days, bool) or not isinstance(attribution_window_days, (int, float)) or not math.isfinite(attribution_window_days) or attribution_window_days != int(attribution_window_days) or not 1 <= attribution_window_days <= 90:
         raise ValueError("归因窗口必须是 1 到 90 天")
     if measurement_mode not in VALID_MEASUREMENT_MODES:
         raise ValueError("measurement_mode 仅支持 simulation 或 observed")
@@ -58,6 +67,11 @@ def evaluate_experiment(
     control_aov = control_revenue / control_orders if control_orders else 0
     incremental_revenue = incremental_orders * control_aov
     roi = (incremental_revenue - cost) / cost if cost > 0 else None
+    if any(value is not None and not math.isfinite(value) for value in (relative_lift, incremental_orders, incremental_revenue, roi)):
+        raise ValueError("实验计算结果超出有限数值范围")
+    warnings = []
+    if min(treatment_users, control_users) < 30:
+        warnings.append("任一组少于 30 人，结果仅用于描述，不能据此推断可靠增量或建议扩量。")
 
     return {
         "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -79,4 +93,6 @@ def evaluate_experiment(
         "incremental_orders": round(incremental_orders, 2),
         "incremental_revenue": round(incremental_revenue, 2),
         "roi": round(roi, 6) if roi is not None else None,
+        "warnings": warnings,
+        "limitations": ["人数门槛不代表统计功效充分；结果未进行显著性检验。", "增量收入使用对照组客单价估计；收入 ROI 不等于利润 ROI。"],
     }

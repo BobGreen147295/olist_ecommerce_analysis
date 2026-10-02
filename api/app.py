@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import csv
+import math
 from io import StringIO
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -118,11 +119,14 @@ def _shopify_refresh_access_token(connection: dict[str, Any]) -> dict[str, Any]:
 
 
 def _money_amount(value: Any) -> Decimal:
-    """解析 Shopify 金额；无效值按零处理，且不保存原始订单。"""
+    """Reject missing/invalid money instead of fabricating a zero amount."""
     try:
-        return Decimal(str((((value or {}).get("shopMoney") or {}).get("amount") or "0")))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
+        amount = Decimal(str(value["shopMoney"]["amount"]))
+        if not amount.is_finite() or amount < 0 or not math.isfinite(float(amount)):
+            raise ValueError("Invalid money")
+        return amount
+    except (InvalidOperation, KeyError, ValueError, TypeError, OverflowError):
+        raise ValueError("Shopify 金额缺失或无效，请补齐后重新同步；缺失金额不会按零处理") from None
 
 
 def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncated: bool) -> dict[str, Any]:
@@ -165,10 +169,37 @@ def _shopify_opportunity_readiness(summary: Any) -> dict[str, str]:
     if summary.get("is_development_store"):
         return {"state": "development_store", "message": "当前连接的是 Shopify 开发店：数据仅用于验证同步，不能解锁真实机会建模或客户触达。"}
     trend = summary["order_trend"]
-    orders = int(trend.get("orders_scanned") or 0)
+    orders = trend.get("orders_scanned", 0)
     days = trend.get("days") if isinstance(trend.get("days"), list) else []
+    if isinstance(orders, bool) or not isinstance(orders, int) or orders < 0:
+        return {"state": "insufficient_data", "message": "订单汇总数量无效，请重新同步。"}
     if orders < 20 or len(days) < 3:
         return {"state": "insufficient_data", "message": f"当前仅 {orders} 笔订单、{len(days)} 个有订单的日期；达到 20 笔订单且覆盖 3 个日期后，才可进入真实机会建模。"}
+    if trend.get("truncated", False) is not False:
+        return {"state": "insufficient_data", "message": "订单历史存在截断，请补齐数据后再分析经营信号。"}
+    dates = set()
+    try:
+        for day in days:
+            day_date = datetime.strptime(day["date"], "%Y-%m-%d").date()
+            if day_date.isoformat() != day["date"] or day_date in dates:
+                raise ValueError("Invalid or duplicate date")
+            dates.add(day_date)
+            for field in ("net_sales", "gross_sales", "refunds"):
+                value = day[field]
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                    raise ValueError("Invalid daily amount")
+        totals = trend["totals"]
+        if not math.isfinite(sum(day["net_sales"] for day in days)):
+            raise ValueError("Invalid net sales total")
+        for field in ("gross_sales", "refunds"):
+            value = totals[field]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise ValueError("Invalid aggregate amount")
+            daily_total = sum(day[field] for day in days)
+            if not math.isfinite(daily_total) or not math.isclose(value, round(daily_total, 2), rel_tol=0, abs_tol=0.01):
+                raise ValueError("Inconsistent aggregate amount")
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return {"state": "insufficient_data", "message": "订单趋势的日期或金额缺失、无效或不一致，请补齐后重新同步；缺失金额不会按零处理。"}
     return {"state": "ready", "message": "已满足基础数据门槛；确认分析口径后可进入真实机会建模。"}
 
 
@@ -189,11 +220,13 @@ def _shopify_store_opportunities(summary: Any) -> list[dict[str, Any]]:
     previous_net = round(sum(float(day.get("net_sales") or 0) for day in previous), 2)
     totals = trend.get("totals") if isinstance(trend.get("totals"), dict) else {}
     gross_sales, refunds = float(totals.get("gross_sales") or 0), float(totals.get("refunds") or 0)
+    provenance = {"currency": summary.get("currency_code") or "unknown", "window_days": trend.get("window_days"),
+                  "observed_start": min(day["date"] for day in normalized), "observed_end": end.isoformat(), "truncated": False}
     signals: list[dict[str, Any]] = []
     if previous_net > 0 and recent_net < previous_net * 0.8:
-        signals.append({"id": "net_sales_decline", "title": "近 7 天净销售额下滑", "summary": f"近 7 天净销售额 {recent_net:.2f}，较此前 7 天的 {previous_net:.2f} 下降超过 20%。", "evidence": {"recent_net_sales": recent_net, "previous_net_sales": previous_net}})
+        signals.append({"id": "net_sales_decline", "title": "近 7 天净销售额下滑", "summary": f"近 7 天净销售额 {recent_net:.2f}，较此前 7 天的 {previous_net:.2f} 下降超过 20%。", "evidence": {"recent_net_sales": recent_net, "previous_net_sales": previous_net}, "provenance": {**provenance, "recent_start": recent_start.isoformat(), "previous_start": previous_start.isoformat()}})
     if gross_sales > 0 and refunds / gross_sales >= 0.1:
-        signals.append({"id": "refund_pressure", "title": "退款/订单调整占比偏高", "summary": f"近 30 天退款/订单调整额 {refunds:.2f}，占销售额 {refunds / gross_sales:.1%}。", "evidence": {"gross_sales": round(gross_sales, 2), "refunds": round(refunds, 2)}})
+        signals.append({"id": "refund_pressure", "title": "退款/订单调整占比偏高", "summary": f"已同步期间退款/订单调整额 {refunds:.2f}，占销售额 {refunds / gross_sales:.1%}。", "evidence": {"gross_sales": round(gross_sales, 2), "refunds": round(refunds, 2)}, "provenance": provenance})
     return signals
 
 
@@ -206,6 +239,8 @@ def _shopify_signal_draft(summary: Any, signal_id: str) -> dict[str, Any]:
         "priority": "P1", "title": signal["title"], "actions": ["核实店铺级信号的业务原因", "确认分析口径后再决定是否设计实验"],
         "audience": "不适用（店铺级汇总）", "channel": "待人工确认", "budget": None, "duration_days": 7,
         "expected_metric": "待人工确认", "expected_effect": "仅为待核实信号，不代表收入承诺", "consent_basis": "不适用：不含客户触达",
+        "source_diagnosis": {"source": "shopify_aggregate", "signal_id": signal_id, "evidence": signal["evidence"],
+                             "provenance": signal["provenance"], "summary_sha256": hashlib.sha256(json.dumps(summary, sort_keys=True, ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()},
     }
 
 
@@ -242,8 +277,8 @@ def _shopify_rest_order_trend(connection: dict[str, Any], currency_code: str | N
             order_currency = order.get("currency") if isinstance(order.get("currency"), str) else (currency_code or "USD")
             nodes.append({
                 "createdAt": order["created_at"],
-                "totalPriceSet": {"shopMoney": {"amount": order.get("total_price") or "0", "currencyCode": order_currency}},
-                "currentTotalPriceSet": {"shopMoney": {"amount": order.get("current_total_price") or "0", "currencyCode": order_currency}},
+                "totalPriceSet": {"shopMoney": {"amount": order.get("total_price"), "currencyCode": order_currency}},
+                "currentTotalPriceSet": {"shopMoney": {"amount": order.get("current_total_price"), "currencyCode": order_currency}},
             })
             if len(nodes) >= SHOPIFY_TREND_MAX_ORDERS:
                 truncated = True
@@ -310,7 +345,10 @@ def _format_agent_answer(result: dict[str, Any]) -> str:
         items = finding.get("evidence", [])
         if not isinstance(items, list):
             items = [items]
-        item = _brief(items[0] if items else finding.get("title"))
+        raw = items[0] if items else finding.get("title")
+        if isinstance(raw, dict):
+            raw = f"{raw.get('label', '指标')}：{raw.get('value')}"
+        item = _brief(raw)
         if item and "query_" not in item.lower():
             evidence.append(item)
     basis = f"目前的数据依据是：{'；'.join(evidence)}。" if evidence else "目前的数据还不足以支持更激进的判断。"
@@ -728,7 +766,7 @@ def create_app() -> Flask:
             connection = get_shopify_connection_status(session["username"])
             summary = connection.get("summary") if connection else None
             draft = _shopify_signal_draft(summary, signal_id)
-            task = create_task(draft, source_diagnosis={"source": "shopify_aggregate", "signal_id": signal_id}, owner=session["username"])
+            task = create_task(draft, source_diagnosis=draft["source_diagnosis"], owner=session["username"])
             return jsonify({"task": task}), 201
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -897,13 +935,13 @@ def create_app() -> Flask:
             payload = request.get_json(silent=True) or {}
             task = record_observed_result(
                 task_id,
-                treatment_users=int(payload.get("treatment_users", 0)),
-                treatment_orders=int(payload.get("treatment_orders", 0)),
-                treatment_revenue=float(payload.get("treatment_revenue", 0)),
-                control_users=int(payload.get("control_users", 0)),
-                control_orders=int(payload.get("control_orders", 0)),
-                control_revenue=float(payload.get("control_revenue", 0)),
-                cost=float(payload.get("cost", 0)),
+                treatment_users=payload.get("treatment_users", 0),
+                treatment_orders=payload.get("treatment_orders", 0),
+                treatment_revenue=payload.get("treatment_revenue", 0),
+                control_users=payload.get("control_users", 0),
+                control_orders=payload.get("control_orders", 0),
+                control_revenue=payload.get("control_revenue", 0),
+                cost=payload.get("cost", 0),
                 currency=payload.get("currency", "USD"),
                 revenue_net_of_refunds=payload.get("revenue_net_of_refunds") is True,
                 owner=session["username"],
