@@ -14,12 +14,13 @@ def main() -> None:
     client = create_app().test_client()
     health = client.get("/health")
     assert health.status_code == 200, health.get_data(as_text=True)
+    assert health.json["release"] == "chat-security-db-ready-2026-10-06"
     readiness = client.get("/v1/integrations/shopify/readiness")
     assert readiness.status_code == 200, readiness.get_data(as_text=True)
     assert readiness.json["state"] in {"configuration_required", "ready_to_authorize"}
     assert "partnerDevelopment" in SHOPIFY_SUMMARY_QUERY and "publicDisplayName" in SHOPIFY_SUMMARY_QUERY
     invalid = client.post("/v1/chat", json={})
-    assert invalid.status_code == 400, invalid.get_data(as_text=True)
+    assert invalid.status_code == 401, invalid.get_data(as_text=True)
     csv_preview = client.post(
         "/v1/data-sources/csv/preview",
         data={"file": (BytesIO(b"id,ordered,amount\n1,2026-09-01,10\n"), "orders.csv")},

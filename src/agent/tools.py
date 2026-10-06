@@ -3,8 +3,10 @@
 from .commerce_store import get_connected_sales_trend
 
 
-def query_sales_trend(months: int = 6) -> dict:
+def query_sales_trend(months: int = 6, *, owner: str | None = None) -> dict:
     """Return an aggregate trend without falling back to bundled sample data."""
+    if not owner:
+        return {"success": False, "data": None, "summary": "必须指定已认证账户", "source": "none"}
     try:
         months = int(months)
     except (TypeError, ValueError):
@@ -13,7 +15,7 @@ def query_sales_trend(months: int = 6) -> dict:
         return {"success": False, "data": None, "summary": "months 必须是 1 到 36 之间的整数"}
 
     try:
-        result = get_connected_sales_trend(months)
+        result = get_connected_sales_trend(months, owner=owner)
     except RuntimeError:
         result = None
     if result is not None:
@@ -29,11 +31,13 @@ def query_sales_trend(months: int = 6) -> dict:
 TOOL_REGISTRY = {"query_sales_trend": query_sales_trend}
 
 
-def execute_tool(tool_name: str, **kwargs) -> dict:
+def execute_tool(tool_name: str, *, owner: str | None = None, **kwargs) -> dict:
     """Execute a registered tool and include its name in the result."""
     tool = TOOL_REGISTRY.get(tool_name)
     if tool is None:
         return {"success": False, "data": None, "summary": f"未知工具: {tool_name}", "tool": tool_name}
-    result = tool(**kwargs)
+    if set(kwargs) - {"months"}:
+        return {"success": False, "data": None, "summary": "工具参数不受支持", "tool": tool_name}
+    result = tool(owner=owner, **kwargs)
     result["tool"] = tool_name
     return result

@@ -1,5 +1,6 @@
 {
   "status": "ok",
   "service": "olist-revenueops-web",
-  "deployment": "static"
+  "deployment": "static",
+  "release": "chat-security-db-ready-2026-10-06"
 }

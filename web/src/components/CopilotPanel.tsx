@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowUp, X } from "@phosphor-icons/react";
 import { useI18n } from "./I18n";
 
@@ -29,28 +29,55 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const sessionToken = useRef<string | null>(null);
+  useEffect(() => {
+    const token = sessionStorage.getItem("revenueops_access_token");
+    if (token !== sessionToken.current) {
+      sessionToken.current = token;
+      setMessages([]);
+    }
+  }, [open]);
   const [agentMode, setAgentMode] = useState<"demo" | "agent" | "unavailable">(API_BASE_URL ? "agent" : "demo");
   async function send(event: FormEvent) {
     event.preventDefault();
     const question = draft.trim();
     if (!question || isLoading) return;
-    setMessages((current) => [...current, { role: "user", content: question }]);
+    const token = sessionStorage.getItem("revenueops_access_token");
+    const sameSession = token === sessionToken.current;
+    const history = sameSession ? messages.slice(-8).map(({ role, content }) => ({ role, content })) : [];
+    sessionToken.current = token;
+    setMessages((current) => [...(sameSession ? current : []), { role: "user", content: question }]);
     setDraft("");
     if (!API_BASE_URL) {
       setMessages((current) => [...current, { role: "assistant", content: replyFor(question, english) }]);
       return;
     }
+    if (!token) {
+      setMessages((current) => [...current, { role: "assistant", content: tx("请先在数据连接页登录，再使用真实数据问答。", "Sign in on the Data page before asking about real data.") }]);
+      return;
+    }
     setIsLoading(true);
     try {
-      const history = messages.slice(-8).map(({ role, content }) => ({ role, content }));
-      const response = await fetch(`${API_BASE_URL}/v1/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: question, history }) });
+      const response = await fetch(`${API_BASE_URL}/v1/chat`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ message: question, history }) });
       const payload = await response.json();
+      if (sessionStorage.getItem("revenueops_access_token") !== token) return;
+      if (response.status === 401 || response.status === 429) {
+        if (response.status === 401) {
+          sessionStorage.removeItem("revenueops_access_token");
+          sessionToken.current = null;
+        }
+        setMessages((current) => [...(response.status === 401 ? [] : current), { role: "assistant", content: response.status === 401
+          ? tx("登录已失效，请在数据连接页重新登录。", "Your session expired. Sign in again on the Data page.")
+          : tx("AI 调用已达上限，请稍后再试；本次未调用模型。", "AI call limit reached. Try again later; no model call was made.") }]);
+        return;
+      }
       if (!response.ok || !payload.answer) throw new Error(payload.error || "Agent 请求失败");
       setAgentMode("agent");
       setMessages((current) => [...current, { role: "assistant", content: payload.answer }]);
     } catch {
+      if (sessionStorage.getItem("revenueops_access_token") !== token) return;
       setAgentMode("unavailable");
-      setMessages((current) => [...current, { role: "assistant", content: tx("实时 Agent 服务暂不可用。本次展示示例推理，不会把它当作真实商家结论。", "The live Agent service is unavailable. This response uses demo reasoning and is not treated as a real merchant conclusion.") + "\n\n" + replyFor(question, english) }]);
+      setMessages((current) => [...current, { role: "assistant", content: tx("实时 Agent 服务暂不可用，请稍后重试。本次没有生成经营结论。", "The live Agent is unavailable. Try again later; no business conclusion was generated.") }]);
     } finally {
       setIsLoading(false);
     }

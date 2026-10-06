@@ -418,7 +418,7 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
-        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1"})
+        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "chat-security-db-ready-2026-10-06"})
 
     @app.route("/v1/public-intelligence", methods=["GET", "OPTIONS"])
     def public_intelligence() -> Any:
@@ -429,6 +429,15 @@ def create_app() -> Flask:
         response = jsonify(get_public_intelligence())
         response.headers["Cache-Control"] = "public, max-age=300"
         return response
+
+    @app.route("/readyz", methods=["GET"])
+    def database_readiness() -> Any:
+        from src.agent.task_store import check_database_connection
+        connected, _ = check_database_connection()
+        response = jsonify({"status": "ok" if connected else "unavailable",
+                            "database": "ok" if connected else "unavailable"})
+        response.headers["Cache-Control"] = "no-store"
+        return response, 200 if connected else 503
 
     @app.route("/v1/integrations/shopify/readiness", methods=["GET", "OPTIONS"])
     def shopify_readiness() -> Any:
@@ -777,16 +786,33 @@ def create_app() -> Flask:
     def chat() -> Any:
         if request.method == "OPTIONS":
             return "", 204
+        try:
+            session = _require_session()
+        except ValueError:
+            return jsonify({"error": "请先登录，或重新登录已失效的会话"}), 401
+        except Exception:
+            return jsonify({"error": "认证服务暂不可用"}), 503
         payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return jsonify({"error": "请求必须是 JSON 对象"}), 400
         message = payload.get("message", "")
         if not isinstance(message, str) or not message.strip():
             return jsonify({"error": "message 是必填字符串"}), 400
         if len(message) > MAX_MESSAGE_LENGTH:
             return jsonify({"error": f"message 最多 {MAX_MESSAGE_LENGTH} 个字符"}), 400
+        from src.agent.chat_usage_store import ChatLimitExceeded, reserve_chat_call
+        try:
+            reserve_chat_call(session["username"])
+        except ChatLimitExceeded as exc:
+            response = jsonify({"error": str(exc), "retry_after": exc.retry_after})
+            response.headers["Retry-After"] = str(exc.retry_after)
+            return response, 429
+        except Exception:
+            return jsonify({"error": "AI 额度服务暂不可用，本次未调用模型"}), 503
         try:
             from src.agent.agent_graph import run_with_history
 
-            result = run_with_history(message.strip(), _safe_history(payload.get("history")))
+            result = run_with_history(message.strip(), _safe_history(payload.get("history")), owner=session["username"])
             return jsonify({
                 "answer": _format_agent_answer(result),
                 "evidence": [

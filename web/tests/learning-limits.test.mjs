@@ -26,7 +26,7 @@ function renderResult(locale, warnings) {
     if (name === 'react/jsx-runtime') return jsxRuntime;
     if (name === '@/components/I18n') return { useI18n: () => ({ locale, t: (key) => key }) };
     if (name === '@/components/Ui') return { PageHeading: () => null, StatusBadge: ({ children }) => React.createElement('span', {}, children) };
-    if (name === 'next/link') return ({ children, href }) => React.createElement('a', { href }, children);
+    if (name === 'next/link') return function TestLink({ children, href }) { return React.createElement('a', { href }, children); };
     if (name.endsWith('.css')) return {};
     throw new Error(`Unexpected dependency: ${name}`);
   };

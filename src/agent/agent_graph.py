@@ -22,6 +22,7 @@ from .observability import append_run_log, build_run_meta
 
 
 class AgentState(TypedDict, total=False):
+    owner: str
     user_query: str
     tool_results: list[dict]
     analysis: str
@@ -64,6 +65,9 @@ def _get_llm():
             "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
             "api_key": api_key,
             "temperature": 0.1,
+            "max_tokens": 1200,
+            "timeout": 30,
+            "max_retries": 0,
         }
         base_url = os.environ.get("OPENAI_BASE_URL")
         if base_url:
@@ -159,6 +163,8 @@ def _render_actions(action_drafts: list[dict]) -> str:
 
 def fetch_data_node(state: AgentState) -> dict:
     """LLM 解析用户问题（含对话上下文），决定调用哪些工具，执行并汇总"""
+    if not state.get("owner"):
+        return {"tool_results": [], "error": "必须指定已认证账户"}
     query = state.get("user_query", "")
     history = state.get("conversation_history", [])
     llm = _get_llm()
@@ -213,7 +219,9 @@ def fetch_data_node(state: AgentState) -> dict:
         if tool_name not in TOOL_REGISTRY:
             results.append({"tool": tool_name, "success": False, "summary": f"未知工具: {tool_name}"})
             continue
-        result = execute_tool(tool_name, **args)
+        # Model/user input must never select the data owner.
+        args = {key: value for key, value in args.items() if key != "owner"}
+        result = execute_tool(tool_name, owner=state["owner"], **args)
         result["tool"] = tool_name
         results.append(result)
 
@@ -427,17 +435,20 @@ agent = build_graph()
 
 # ============ 公开接口 ============
 
-def run(user_query: str) -> dict:
+def run(user_query: str, *, owner: str) -> dict:
     """运行 Agent（单轮），向后兼容 CLI 调用"""
-    return run_with_history(user_query, [])
+    return run_with_history(user_query, [], owner=owner)
 
 
-def run_with_history(user_query: str, history: list[dict] = None) -> dict:
+def run_with_history(user_query: str, history: list[dict] = None, *, owner: str) -> dict:
     """运行 Agent（多轮），携带对话历史上下文"""
+    if not owner:
+        raise ValueError("必须指定已认证账户")
     started_at = time.perf_counter()
     state: AgentState = {
         "user_query": user_query,
         "conversation_history": history or [],
+        "owner": owner,
     }
     result = agent.invoke(state)
     response = {
@@ -460,12 +471,13 @@ def run_with_history(user_query: str, history: list[dict] = None) -> dict:
 class ChatSession:
     """多轮对话会话，自动管理历史记录"""
 
-    def __init__(self):
+    def __init__(self, *, owner: str):
+        self.owner = owner
         self.history: list[dict] = []
 
     def chat(self, user_query: str) -> dict:
         """发送一条消息，返回 Agent 结果并自动更新历史"""
-        result = run_with_history(user_query, self.history)
+        result = run_with_history(user_query, self.history, owner=self.owner)
 
         # 构建助手的完整回复（拼接分析 + 策略）
         assistant_reply_parts = []

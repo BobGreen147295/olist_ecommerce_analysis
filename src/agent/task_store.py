@@ -56,13 +56,23 @@ def check_database_connection() -> tuple[bool, str]:
     if not _use_database():
         return False, "未配置 DATABASE_URL"
     try:
-        conn, _ = _connect_database()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return True, "连接正常"
+        url = _database_url()
+        if url.startswith(("postgres://", "postgresql://")):
+            import psycopg2
+            conn = psycopg2.connect(url, connect_timeout=5, options="-c statement_timeout=5000")
+        elif url.startswith("sqlite:///"):
+            db_path = Path(url[len("sqlite:///"):]).resolve()
+            conn = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5)
+        else:
+            return False, "不支持的数据库类型"
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            valid = cursor.fetchone() == (1,)
+            cursor.close()
+        finally:
+            conn.close()
+        return valid, "连接正常" if valid else "检查失败"
     except Exception as exc:
         return False, f"连接失败：{type(exc).__name__}"
 
