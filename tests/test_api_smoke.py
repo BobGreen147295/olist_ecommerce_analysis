@@ -14,7 +14,7 @@ def main() -> None:
     client = create_app().test_client()
     health = client.get("/health")
     assert health.status_code == 200, health.get_data(as_text=True)
-    assert health.json["release"] == "chat-security-db-ready-2026-10-06"
+    assert health.json["release"] == "copilot-knowledge-rag-2026-10-07"
     readiness = client.get("/v1/integrations/shopify/readiness")
     assert readiness.status_code == 200, readiness.get_data(as_text=True)
     assert readiness.json["state"] in {"configuration_required", "ready_to_authorize"}

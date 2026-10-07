@@ -327,7 +327,18 @@ def _brief(value: Any, limit: int = 180) -> str:
 
 def _format_agent_answer(result: dict[str, Any]) -> str:
     """把 Agent 的结构化工作底稿转成聊天答复，不暴露工具名或 Markdown。"""
+    from src.agent.knowledge import render_knowledge
+    knowledge = result.get("knowledge_sources", [])
+    if result.get("knowledge_only"):
+        return render_knowledge(knowledge)
+    if knowledge:
+        # Keep the existing business answer, but append retrieved originals separately.
+        return _format_agent_answer({**result, "knowledge_sources": []}) + "\n\n产品方法依据（不是店铺事实）：\n" + render_knowledge(knowledge)
+    if result.get("error"):
+        return "当前账户没有成功取得可用经营数据，本次不能生成经营结论或执行建议。请检查数据连接、覆盖范围和同步状态。"
     diagnosis = result.get("diagnosis") if isinstance(result.get("diagnosis"), dict) else {}
+    if diagnosis.get("data_sufficient") is False:
+        return "当前数据不足以支持经营建议。请先核对数据来源、观察窗口和所需字段，本次不生成执行策略。"
     findings = diagnosis.get("findings") if isinstance(diagnosis.get("findings"), list) else []
     action_drafts = result.get("action_drafts") if isinstance(result.get("action_drafts"), list) else []
 
@@ -418,7 +429,7 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
-        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "chat-security-db-ready-2026-10-06"})
+        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "copilot-knowledge-rag-2026-10-07"})
 
     @app.route("/v1/public-intelligence", methods=["GET", "OPTIONS"])
     def public_intelligence() -> Any:
@@ -821,6 +832,7 @@ def create_app() -> Flask:
                 ],
                 "action_drafts": result.get("action_drafts", []),
                 "diagnosis": result.get("diagnosis", {}),
+                "knowledge_sources": result.get("knowledge_sources", []),
                 "error": result.get("error"),
                 "mode": "agent",
             })
