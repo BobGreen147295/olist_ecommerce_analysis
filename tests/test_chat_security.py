@@ -5,7 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from api.app import create_app
-from src.agent import agent_graph, chat_usage_store, tools
+from src.agent import agent_graph, auth_session_store, chat_usage_store, tools
 from src.agent.auth_session_store import issue_session, revoke_session, get_session
 from src.agent.commerce_store import import_order_csv
 
@@ -39,6 +39,47 @@ class ChatSecurityTests(unittest.TestCase):
 
     def headers(self, owner="merchant-a"):
         return {"Authorization": "Bearer " + self.tokens[owner]}
+
+    def test_password_login_knowledge_answer_and_logout_end_to_end(self):
+        from src.agent.account_store import create_user
+        create_user("synthetic-user", "synthetic-password-only", "test-code", "test-code")
+        credentials = {"username": "synthetic-user", "password": "synthetic-password-only"}
+        with patch.object(agent_graph, "_get_llm") as model:
+            rejected = self.client.post("/v1/auth/login", json={**credentials, "password": "wrong"})
+            self.assertEqual(rejected.status_code, 401)
+            response = self.client.post("/v1/auth/login", json=credentials)
+            self.assertEqual(response.status_code, 200)
+            headers = {"Authorization": "Bearer " + response.json["access_token"]}
+            identity = self.client.get("/v1/auth/me", headers=headers)
+            self.assertEqual(identity.status_code, 200)
+            self.assertEqual(identity.json["username"], "synthetic-user")
+            answer = self.client.post("/v1/chat", json={"message": "ROI 如何计算"}, headers=headers)
+            self.assertEqual(answer.status_code, 200)
+            self.assertTrue(answer.json["knowledge_sources"])
+            self.assertEqual(self.client.post("/v1/auth/logout", headers=headers).status_code, 204)
+            self.assertEqual(self.client.get("/v1/auth/me", headers=headers).status_code, 401)
+            self.assertEqual(self.client.post("/v1/chat", json={"message": "ROI 如何计算"}, headers=headers).status_code, 401)
+            model.assert_not_called()
+
+    def test_login_and_register_report_actual_session_expiry(self):
+        credentials = {"username": "ttl-user", "password": "synthetic-password-only"}
+        started = datetime(2026, 10, 8, tzinfo=timezone.utc)
+        with patch.dict(os.environ, {"REGISTRATION_CODE": "synthetic-code"}), patch.object(auth_session_store, "datetime") as clock:
+            clock.now.return_value = started
+            registered = self.client.post("/v1/auth/register", json={**credentials, "registration_code": "synthetic-code"})
+            self.assertEqual(registered.status_code, 201)
+            logged_in = self.client.post("/v1/auth/login", json=credentials)
+            self.assertEqual(logged_in.status_code, 200)
+            for response in (registered, logged_in):
+                self.assertEqual(response.json["expires_in"], auth_session_store.SESSION_TTL_SECONDS)
+                token = response.json["access_token"]
+                expires = started + timedelta(seconds=response.json["expires_in"])
+                self.assertEqual(int(token.split(".")[2]), int(expires.timestamp()))
+                headers = {"Authorization": "Bearer " + token}
+                clock.now.return_value = expires - timedelta(seconds=1)
+                self.assertEqual(self.client.get("/v1/auth/me", headers=headers).status_code, 200)
+                clock.now.return_value = expires
+                self.assertEqual(self.client.get("/v1/auth/me", headers=headers).status_code, 401)
 
     def test_missing_forged_revoked_and_expired_sessions_do_not_call_ai(self):
         revoked = issue_session("revoked", "operator")

@@ -1,9 +1,10 @@
 """
-LangGraph 三节点 Agent 编排（v2.1 支持多轮对话）
+LangGraph 问答编排：支持多轮对话与有界证据核验
 
-节点: fetch_data → analyze → recommend
+节点: fetch_data → analyze → verify → recommend
 - fetch_data: LLM 解析用户问题 → 选择工具 → 执行 → 汇总结果
 - analyze: LLM 分析数据关键发现
+- verify: 程序核验，最多返回 analyze 修正一次，否则停止
 - recommend: LLM 生成可执行运营策略
 
 新增 v2.1:
@@ -18,7 +19,7 @@ from typing import TypedDict, Optional
 
 from langgraph.graph import StateGraph, END
 from .tools import execute_tool, TOOL_REGISTRY
-from .observability import append_run_log, build_run_meta
+from .observability import append_run_log, build_run_meta, diagnosis_validation_errors
 from .knowledge import retrieve_knowledge, is_knowledge_question, render_knowledge
 
 
@@ -34,6 +35,10 @@ class AgentState(TypedDict, total=False):
     conversation_history: list[dict]  # [{"role":"user"|"assistant", "content":"..."}]
     knowledge_sources: list[dict]
     knowledge_only: bool
+    analysis_attempts: int
+    validation_errors: list[str]
+    diagnosis_verified: bool
+    verification_status: str
 
 
 # 可用工具元数据（给 LLM 看）
@@ -114,20 +119,6 @@ def _parse_json_object(raw: str) -> dict:
     if not isinstance(value, dict):
         raise ValueError("模型返回结果必须是 JSON 对象")
     return value
-
-
-def _fallback_diagnosis(tool_results: list[dict]) -> dict:
-    """结构化输出失败时，基于工具摘要生成可追溯的最低限度诊断。"""
-    findings = []
-    for result in tool_results:
-        if result.get("success"):
-            findings.append({
-                "title": result.get("tool", "数据查询") + " 已完成",
-                "evidence": [result.get("summary", "")],
-                "source": result.get("tool", "unknown"),
-                "confidence": 0.5,
-            })
-    return {"findings": findings, "data_sufficient": bool(findings)}
 
 
 def _render_diagnosis(diagnosis: dict) -> str:
@@ -304,20 +295,50 @@ def analyze_node(state: AgentState) -> dict:
 }}
 """
 
+    if state.get("validation_errors"):
+        prompt += "\n这是唯一一次修正机会。以下程序核验未通过，请仅根据相同数据修正 JSON，不增加数据、来源或权限：\n" + "\n".join(state["validation_errors"])
+    attempts = state.get("analysis_attempts", 0) + 1
     try:
         resp = llm.invoke(prompt)
         analysis = resp.content.strip()
-    except Exception as e:
-        analysis = f"分析失败: {str(e)}"
+    except Exception:
+        return {"analysis": "", "diagnosis": {}, "analysis_attempts": attempts,
+                "error": "分析服务暂不可用，本次停止，不自动重试。"}
 
-    diagnosis = _fallback_diagnosis(tool_results)
+    diagnosis = {}
     try:
-        diagnosis_candidate = _parse_json_object(analysis)
-        if isinstance(diagnosis_candidate.get("findings"), list):
-            diagnosis = diagnosis_candidate
+        diagnosis = _parse_json_object(analysis)
     except (ValueError, json.JSONDecodeError):
         pass
-    return {"analysis": _render_diagnosis(diagnosis), "diagnosis": diagnosis}
+    # Unchecked text must not be rendered, recommended on, or returned to the user.
+    return {"analysis": "", "diagnosis": diagnosis, "analysis_attempts": attempts}
+
+
+def verify_node(state: AgentState) -> dict:
+    if state.get("knowledge_only"):
+        return {"verification_status": "not_required", "diagnosis_verified": False}
+    if state.get("error"):
+        return {"verification_status": "failed", "diagnosis_verified": False,
+                "diagnosis": {"findings": [], "data_sufficient": False}, "analysis": "", "action_drafts": []}
+    diagnosis = state.get("diagnosis", {})
+    if isinstance(diagnosis, dict) and diagnosis.get("data_sufficient") is False:
+        return {"verification_status": "insufficient", "diagnosis_verified": False,
+                "diagnosis": {"findings": [], "data_sufficient": False}, "analysis": "数据不足，不生成策略。", "action_drafts": []}
+    errors = diagnosis_validation_errors(diagnosis, state.get("tool_results", []))
+    if not errors:
+        return {"verification_status": "passed", "diagnosis_verified": True,
+                "validation_errors": [], "analysis": _render_diagnosis(diagnosis)}
+    if state.get("analysis_attempts", 0) < 2:
+        return {"verification_status": "repair_required", "diagnosis_verified": False, "validation_errors": errors}
+    return {"verification_status": "failed", "diagnosis_verified": False,
+            "error": "诊断经过一次修正后仍未通过证据核验，本次停止。",
+            "diagnosis": {"findings": [], "data_sufficient": False}, "analysis": "", "action_drafts": []}
+
+
+def after_verification(state: AgentState) -> str:
+    if state.get("verification_status") == "repair_required":
+        return "analyze"
+    return "recommend" if state.get("diagnosis_verified") else END
 
 
 # ============ 节点 3: recommend ============
@@ -330,6 +351,8 @@ def recommend_node(state: AgentState) -> dict:
         return {"recommendation": "因数据查询失败，无法生成策略", "error": state["error"]}
     if state.get("diagnosis", {}).get("data_sufficient") is False:
         return {"recommendation": "数据不足，请先补充可核验数据，不生成执行策略。", "action_drafts": []}
+    if state.get("diagnosis_verified") is not True:
+        return {"recommendation": "诊断尚未通过核验，不生成策略。", "action_drafts": []}
 
     query = state.get("user_query", "")
     analysis = state.get("analysis", "")
@@ -430,8 +453,8 @@ def recommend_node(state: AgentState) -> dict:
 
 def should_continue(state: AgentState) -> str:
     """路由: fetch_data 后如果出错且无结果则跳到 END，否则继续"""
-    if state.get("error") and not state.get("tool_results"):
-        return END
+    if state.get("error"):
+        return "verify"
     return "analyze"
 
 
@@ -441,11 +464,13 @@ def build_graph() -> StateGraph:
 
     graph.add_node("fetch_data", fetch_data_node)
     graph.add_node("analyze", analyze_node)
+    graph.add_node("verify", verify_node)
     graph.add_node("recommend", recommend_node)
 
     graph.set_entry_point("fetch_data")
     graph.add_conditional_edges("fetch_data", should_continue)
-    graph.add_edge("analyze", "recommend")
+    graph.add_edge("analyze", "verify")
+    graph.add_conditional_edges("verify", after_verification)
     graph.add_edge("recommend", END)
 
     return graph.compile()
@@ -483,6 +508,8 @@ def run_with_history(user_query: str, history: list[dict] = None, *, owner: str)
         "error": result.get("error"),
         "knowledge_sources": result.get("knowledge_sources", []),
         "knowledge_only": result.get("knowledge_only", False),
+        "verification": {"status": result.get("verification_status", "not_checked"),
+                         "analysis_attempts": result.get("analysis_attempts", 0)},
     }
     run_meta = build_run_meta(user_query, response, int((time.perf_counter() - started_at) * 1000))
     append_run_log(run_meta)

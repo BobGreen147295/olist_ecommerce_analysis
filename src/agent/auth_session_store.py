@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from .task_store import _connect_database, _use_database
 
 
-_TOKEN_TTL_MINUTES = 8 * 60
+SESSION_TTL_SECONDS = 8 * 60 * 60
 
 
 def _now() -> str:
@@ -64,7 +64,7 @@ def _ensure_schema() -> None:
 def issue_session(username: str, role: str) -> str:
     _ensure_schema()
     session_id = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_TOKEN_TTL_MINUTES)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=SESSION_TTL_SECONDS)
     expiry_text = expires_at.isoformat(timespec="seconds")
     conn, placeholder = _connect_database()
     try:

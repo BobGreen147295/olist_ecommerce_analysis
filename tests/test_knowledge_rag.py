@@ -63,7 +63,7 @@ class KnowledgeRagTests(unittest.TestCase):
                 agent_graph.analyze_node(state)
                 self.assertIn(documents[0]["text"], invoke.call_args.args[0])
                 self.assertIn("不是商家事实", invoke.call_args.args[0])
-                agent_graph.recommend_node(state)
+                agent_graph.recommend_node({**state, "diagnosis_verified": True})
                 self.assertIn(documents[0]["text"], invoke.call_args.args[0])
 
     def test_business_query_keeps_owner_and_separates_methods_from_store_evidence(self):

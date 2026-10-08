@@ -335,6 +335,8 @@ def _format_agent_answer(result: dict[str, Any]) -> str:
         # Keep the existing business answer, but append retrieved originals separately.
         return _format_agent_answer({**result, "knowledge_sources": []}) + "\n\n产品方法依据（不是店铺事实）：\n" + render_knowledge(knowledge)
     if result.get("error"):
+        if result.get("verification", {}).get("analysis_attempts", 0):
+            return "本次分析未通过核验或分析服务不可用，不能交付可靠结论；没有生成执行建议。请稍后重试或人工核对原始数据。"
         return "当前账户没有成功取得可用经营数据，本次不能生成经营结论或执行建议。请检查数据连接、覆盖范围和同步状态。"
     diagnosis = result.get("diagnosis") if isinstance(result.get("diagnosis"), dict) else {}
     if diagnosis.get("data_sufficient") is False:
@@ -429,7 +431,7 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
-        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "copilot-knowledge-rag-2026-10-07"})
+        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "copilot-verified-session-2026-10-08"})
 
     @app.route("/v1/public-intelligence", methods=["GET", "OPTIONS"])
     def public_intelligence() -> Any:
@@ -503,11 +505,11 @@ def create_app() -> Flask:
             return jsonify({"error": "用户名或密码格式无效"}), 400
         try:
             from src.agent.account_store import authenticate_user
-            from src.agent.auth_session_store import issue_session
+            from src.agent.auth_session_store import SESSION_TTL_SECONDS, issue_session
             user = authenticate_user(username.strip(), password)
             if not user:
                 return jsonify({"error": "用户名或密码不正确"}), 401
-            return jsonify({"access_token": issue_session(user["username"], user["role"]), "expires_in": 1_800})
+            return jsonify({"access_token": issue_session(user["username"], user["role"]), "expires_in": SESSION_TTL_SECONDS})
         except RuntimeError:
             app.logger.exception("Login service configuration failed")
             return jsonify({"error": "登录服务尚未配置完成"}), 503
@@ -524,9 +526,9 @@ def create_app() -> Flask:
             return jsonify({"error": "注册信息格式无效"}), 400
         try:
             from src.agent.account_store import create_user
-            from src.agent.auth_session_store import issue_session
+            from src.agent.auth_session_store import SESSION_TTL_SECONDS, issue_session
             user = create_user(username.strip(), password, registration_code, os.environ.get("REGISTRATION_CODE", ""))
-            return jsonify({"access_token": issue_session(user["username"], user["role"]), "expires_in": 1_800}), 201
+            return jsonify({"access_token": issue_session(user["username"], user["role"]), "expires_in": SESSION_TTL_SECONDS}), 201
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except RuntimeError:
@@ -833,6 +835,7 @@ def create_app() -> Flask:
                 "action_drafts": result.get("action_drafts", []),
                 "diagnosis": result.get("diagnosis", {}),
                 "knowledge_sources": result.get("knowledge_sources", []),
+                "verification": result.get("verification", {}),
                 "error": result.get("error"),
                 "mode": "agent",
             })

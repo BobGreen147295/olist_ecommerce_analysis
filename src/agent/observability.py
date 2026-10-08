@@ -24,6 +24,8 @@ def _matches_data_reference(evidence: Any, data: Any) -> bool:
     value = data
     try:
         for key in evidence["path"].split("."):
+            if isinstance(value, list) and not key.isdecimal():
+                return False
             value = value[int(key)] if isinstance(value, list) else value[key]
     except (KeyError, IndexError, ValueError, TypeError):
         return False
@@ -33,6 +35,30 @@ def _matches_data_reference(evidence: Any, data: Any) -> bool:
     if isinstance(value, (int, float)) and isinstance(expected, (int, float)):
         return math.isfinite(value) and math.isfinite(expected) and value == expected
     return isinstance(value, str) and isinstance(expected, str) and bool(value) and value == expected
+
+
+def diagnosis_validation_errors(diagnosis: Any, tool_results: list[dict]) -> list[str]:
+    """Check shape and exact current-tool references, not semantic truth of titles."""
+    if not isinstance(diagnosis, dict) or type(diagnosis.get("data_sufficient")) is not bool:
+        return ["诊断必须有布尔型 data_sufficient"]
+    findings = diagnosis.get("findings")
+    if not isinstance(findings, list) or not findings:
+        return ["数据充分的诊断必须包含发现"]
+    errors = []
+    for index, finding in enumerate(findings):
+        if not isinstance(finding, dict) or not isinstance(finding.get("title"), str) or not finding["title"].strip():
+            errors.append(f"发现 {index + 1} 缺少有效标题")
+            continue
+        evidence = finding.get("evidence")
+        sources = [item for item in tool_results if item.get("success") is True
+                   and item.get("data") is not None and finding.get("source")
+                   and finding["source"] in (item.get("tool"), item.get("source"))]
+        if not isinstance(evidence, list) or not evidence or not any(
+            all(_matches_data_reference(reference, source["data"]) for reference in evidence)
+            for source in sources
+        ):
+            errors.append(f"发现 {index + 1} 的来源、字段路径或值无法核验")
+    return errors
 
 
 def _is_actionable(value: Any) -> bool:
@@ -115,6 +141,8 @@ def build_run_meta(
         "duration_ms": duration_ms,
         "query_hash": hashlib.sha256(user_query.encode("utf-8")).hexdigest()[:16],
         "query_length": len(user_query),
+        "verification_status": result.get("verification", {}).get("status", "not_checked"),
+        "analysis_attempts": result.get("verification", {}).get("analysis_attempts", 0),
         "tool_count": len(tool_results),
         "successful_tool_count": sum(bool(item.get("success")) for item in tool_results),
         "finding_count": len(diagnosis.get("findings", [])) if isinstance(diagnosis, dict) else 0,
