@@ -75,5 +75,6 @@ export default function OverviewPage() {
     <CrossBorderPulse />
     <section className="section-heading"><div><p className="eyebrow">Synthetic opportunity queue</p><h2>{t("syntheticQueue")}</h2></div><Link href="/opportunities" className="text-link">{t("viewAllDemo")} →</Link></section>
     <section className="card table-card"><div className="table-head"><span>{t("opportunity")}</span><span>{t("owner")}</span><span>{t("estimatedOpportunity")}</span><span>{t("compositeScore")}</span><span>{t("status")}</span></div>{opportunities.map((item) => { const copy = english ? demoOpportunityCopy[item.id] : null; return <div className="table-row" key={item.id}><div><strong>{copy?.title ?? item.title}</strong><small>{copy?.segment ?? item.segment} · {t("demoLabel")}</small></div><span>{item.owner}</span><strong>{item.potential}</strong><strong>{item.score}</strong><StatusBadge tone={item.status === "待审批" ? "warning" : "neutral"}>{copy?.status ?? item.status}</StatusBadge></div>; })}</section>
+    <section className="card homepage-conversion"><div><h2>{tx("演示看完了，下一步核对你的店铺", "Ready to review your own store?")}</h2><p>{tx("先确认问题和授权范围，不上传订单，也不会自动触达客户。", "Agree on the question and access scope first. No order upload or automatic customer outreach.")}</p></div><Link className="button button-primary" href="/pilot#apply">{t("applyStore")}</Link></section>
   </main>;
 }

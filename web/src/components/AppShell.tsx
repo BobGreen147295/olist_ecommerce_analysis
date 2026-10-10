@@ -42,6 +42,17 @@ function AppShellContent({ children }: { children: ReactNode }) {
   const currentPage = navigation.find((item) => item.href === "/" ? pathname === "/" : pathname.startsWith(item.href));
   const showIntro = pathname === "/" && introOpen;
 
+  if (pathname === "/pilot" || pathname === "/pilot/sample-report" || pathname === "/privacy") {
+    return <div className="public-pilot-shell">
+      <a className="skip-link" href="#main-content">跳到主要内容</a>
+      <header className="public-pilot-header">
+        <Link className="public-pilot-brand" href="/">RevenueOps</Link>
+        <nav aria-label="试点导航"><Link href="/pilot/sample-report">查看示例</Link><Link className="button button-primary" href="/pilot#apply">申请连店</Link></nav>
+      </header>
+      <div id="main-content">{children}</div>
+    </div>;
+  }
+
   return <>{showIntro && <LeadInExperience onEnter={() => setIntroOpen(false)} />}<div className="app-shell" inert={showIntro} aria-hidden={showIntro || undefined}>
     <a className="skip-link" href="#main-content">{t("skip")}</a>
     <button className={`nav-scrim ${navOpen ? "nav-scrim-visible" : ""}`} onClick={() => setNavOpen(false)} aria-label={t("closeNav")} />

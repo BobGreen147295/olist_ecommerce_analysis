@@ -753,3 +753,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .pulse-brief { min-height: 360px; padding: 24px 18px; }
   .pulse-brief h3 { font-size: 27px; }
 }
+.public-pilot-header { max-width: 1440px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 40px; border-bottom: 1px solid var(--line); }
+.public-pilot-brand { color: var(--ink); font-size: 20px; font-weight: 700; text-decoration: none; }
+.public-pilot-header nav { display: flex; align-items: center; gap: 16px; }
+.public-pilot-header nav > a:first-child { color: var(--ink); padding-block: 12px; }
+.public-pilot-header a:focus-visible, .pilot-backup-contact a:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+.pilot-backup-contact { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.pilot-backup-contact a { color: var(--brand); display: inline-flex; align-items: center; min-height: 44px; overflow-wrap: anywhere; max-width: 100%; }
+.homepage-conversion { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; margin-top: 24px; }
+@media (max-width: 620px) {
+  .public-pilot-header { padding: 16px; flex-wrap: wrap; }
+  .public-pilot-header nav { flex-wrap: wrap; gap: 12px; }
+  .pilot-backup-contact p { font-size: 16px; }
+  .homepage-conversion .button { width: 100%; }
+}

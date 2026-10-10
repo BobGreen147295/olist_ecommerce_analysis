@@ -138,6 +138,7 @@ export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
           </div>
         </div>
         <div className="signal-progress" aria-hidden="true"><i style={{ width: `${((activeStage + 1) / localizedStages.length) * 100}%` }} /></div>
+        <div className="demo-conversion"><p>{english ? "Want to review your own store?" : "想核对你自己的店铺？"}</p><Link className="lead-in-cta" href="/pilot#apply">{t("applyStore")}</Link></div>
       </article>
     </div>
 

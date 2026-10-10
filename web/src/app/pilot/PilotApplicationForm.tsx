@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
+const CONTACT_EMAIL = process.env.NEXT_PUBLIC_REVENUEOPS_CONTACT_EMAIL?.trim() || "duan.hongbo@outlook.com";
 
 export function PilotApplicationForm() {
   const [status, setStatus] = useState("");
@@ -12,7 +13,8 @@ export function PilotApplicationForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
-    if (!API_BASE_URL) { setStatus("申请服务尚未配置，请稍后重试。"); return; }
+    if (busy) return;
+    if (!API_BASE_URL) { setStatus(CONTACT_EMAIL ? "在线申请暂不可用，请使用旁边的备用邮箱联系。" : "在线申请暂不可用，请稍后重试。"); return; }
     const form = new FormData(formElement);
     setBusy(true); setStatus("");
     try {
@@ -25,15 +27,17 @@ export function PilotApplicationForm() {
       if (!response.ok) throw new Error(data.error ?? "提交失败，请稍后重试。");
       formElement.reset();
       setStatus("申请已收到。我们会在 2 个工作日内通过邮箱联系你确认范围。");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "提交失败，请稍后重试。");
+    } catch {
+      setStatus(CONTACT_EMAIL ? "申请未确认收到，请重试或使用旁边的备用邮箱联系。表单内容已保留。" : "申请未确认收到，请稍后重试。表单内容已保留。");
     } finally {
       setBusy(false);
     }
   }
 
   return <section className="card pilot-application" id="apply">
-    <div><p className="eyebrow">申请免费试点</p><h2>先确认是否适合，不上传订单</h2><p>这里只收合作联系信息。通过初筛后，我们才会与你确认授权范围。</p></div>
+    <div><p className="eyebrow">申请免费试点</p><h2>先确认是否适合，不上传订单</h2><p>这里只收合作联系信息。通过初筛后，我们才会与你确认授权范围。</p>
+      {CONTACT_EMAIL && <aside className="pilot-backup-contact" aria-label="备用联系邮箱"><h3>也可以直接邮件联系</h3><p>表单无法提交，或想先问清楚？</p><a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("RevenueOps 试点咨询")}`}>{CONTACT_EMAIL}</a><p>请只提供店铺网址和想核对的问题，不要发送订单、客户资料或访问令牌。点击将打开你的邮件应用，不会自动发送。</p></aside>}
+    </div>
     <form onSubmit={submit}>
       <label>联系邮箱<input required type="email" name="contact_email" autoComplete="email" placeholder="you@company.com" /></label>
       <label>Shopify 店铺域名<input required name="shop_domain" inputMode="url" placeholder="your-store.myshopify.com" /></label>
