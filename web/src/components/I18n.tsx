@@ -30,7 +30,9 @@ const messages = {
     learningTitle: "实验学习", learningDescription: "优先展示真实执行的商家汇总结果；演示数据始终独立标记。",
     dataTitle: "数据连接", dataDescription: "跨境商家的真实价值来自可授权的数据连接，而不是替代商家保存或猜测业务数据。", requestConnector: "申请连接器",
     introStatus: "Shopify 数据连接就绪", introKicker: "收入决策操作系统", introTitle1: "从数据异常，", introTitle2: "到可验证增长。",
-    introSummary: "发现收入机会，设计可控实验，并用真实结果验证每一次增长决策。", enterWorkspace: "进入 RevenueOps",
+    introSummary: "面向已有订单的 Shopify 商家：先核对订单、退款与折扣变化，交付一份可审阅的诊断和下一步建议。", enterWorkspace: "进入 RevenueOps",
+    applyStore: "申请连店", viewInteractiveDemo: "查看交互演示",
+    applicationNote: "先提交合作联系信息，不上传订单；确认范围后再授权只读连接。当前试点免费，不承诺营收增长。",
     humanApproval: "所有行动需人工确认", separatedData: "演示数据与真实数据明确隔离",
   },
   en: {
@@ -56,7 +58,9 @@ const messages = {
     learningTitle: "Experiment learning", learningDescription: "Real merchant aggregate outcomes come first. Demo results remain clearly labeled and separate.",
     dataTitle: "Data connections", dataDescription: "Cross-border value begins with merchant-authorized data—not stored substitutes or guessed business data.", requestConnector: "Request connector",
     introStatus: "Shopify data connection ready", introKicker: "Revenue decision operating system", introTitle1: "From data signals", introTitle2: "to measurable growth.",
-    introSummary: "Find revenue opportunities, design controlled experiments, and validate every growth decision with real outcomes.", enterWorkspace: "Enter RevenueOps",
+    introSummary: "For Shopify merchants with existing orders: review order, refund, and discount changes, then receive a diagnosis you can check and a suggested next step.", enterWorkspace: "Enter RevenueOps",
+    applyStore: "Apply to connect your store", viewInteractiveDemo: "Explore the interactive demo",
+    applicationNote: "Share business contact details first, not orders. Agree on scope before authorizing read-only access. The current pilot is free; revenue growth is not guaranteed.",
     humanApproval: "Every action requires human approval", separatedData: "Demo and real data remain clearly separated",
   },
 } as const;

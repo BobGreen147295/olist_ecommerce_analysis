@@ -9,6 +9,7 @@ import {
   Target,
 } from "@phosphor-icons/react";
 import { useEffect, useState, type PointerEvent } from "react";
+import Link from "next/link";
 import { useI18n } from "./I18n";
 
 const stages = {
@@ -101,7 +102,11 @@ export function LeadInExperience({ onEnter }: { onEnter: () => void }) {
         <p className="lead-in-kicker">{t("introKicker")}</p>
         <h1>{t("introTitle1")}<br />{t("introTitle2")}</h1>
         <p className="lead-in-summary">{t("introSummary")}</p>
-        <button className="lead-in-cta" onClick={enterWorkspace}>{t("enterWorkspace")} <ArrowRight size={18} weight="bold" aria-hidden /></button>
+        <div className="lead-in-conversion">
+          <Link className="lead-in-cta" href="/pilot#apply" aria-describedby="lead-in-application-note">{t("applyStore")}</Link>
+          <button className="lead-in-demo" onClick={enterWorkspace}>{t("viewInteractiveDemo")} <ArrowRight size={18} weight="bold" aria-hidden /></button>
+        </div>
+        <p className="lead-in-application-note" id="lead-in-application-note">{t("applicationNote")}</p>
         <div className="lead-in-trust">
           <span><ShieldCheck size={17} aria-hidden /> {t("humanApproval")}</span>
           <span><CheckCircle size={17} aria-hidden /> {t("separatedData")}</span>
