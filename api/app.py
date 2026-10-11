@@ -468,7 +468,8 @@ def create_app() -> Flask:
                 if session["role"] != "admin":
                     return jsonify({"error": "仅管理员可查看试点申请"}), 403
                 from src.agent.pilot_application_store import list_pilot_applications
-                return jsonify({"applications": list_pilot_applications()})
+                from src.agent.pilot_notification import notification_configured
+                return jsonify({"applications": list_pilot_applications(), "owner_notification_configured": notification_configured()})
             except (ValueError, RuntimeError):
                 return jsonify({"error": "登录已失效，请重新登录"}), 401
 
@@ -490,10 +491,17 @@ def create_app() -> Flask:
         try:
             from src.agent.pilot_application_store import create_pilot_application
             application_id = create_pilot_application(email, shop_domain, monthly_orders, challenge)
-            return jsonify({"application_id": application_id}), 201
         except RuntimeError:
             app.logger.exception("Pilot application storage failed")
             return jsonify({"error": "申请服务暂不可用，请稍后重试"}), 503
+        from src.agent.pilot_notification import notify_owner
+        try:
+            notification = notify_owner(application_id)
+        except Exception:
+            # A notification bug must not turn a committed application into a failed form.
+            notification = "failed"
+        app.logger.warning("Pilot owner notification: %s; application_id=%s", notification, application_id)
+        return jsonify({"application_id": application_id}), 201
 
     @app.route("/v1/auth/login", methods=["POST", "OPTIONS"])
     def login() -> Any:

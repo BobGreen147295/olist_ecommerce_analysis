@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
-const CONTACT_EMAIL = process.env.NEXT_PUBLIC_REVENUEOPS_CONTACT_EMAIL?.trim() || "duan.hongbo@outlook.com";
+const CONTACT_EMAIL = process.env.NEXT_PUBLIC_REVENUEOPS_CONTACT_EMAIL?.trim() || "gbob4549@gmail.com";
 
 export function PilotApplicationForm() {
   const [status, setStatus] = useState("");
@@ -26,7 +26,7 @@ export function PilotApplicationForm() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error ?? "提交失败，请稍后重试。");
       formElement.reset();
-      setStatus("申请已收到。我们会在 2 个工作日内通过邮箱联系你确认范围。");
+      setStatus("申请已保存。这不是自动确认邮件；我们会人工审阅，并通过你填写的邮箱联系你确认范围。");
     } catch {
       setStatus(CONTACT_EMAIL ? "申请未确认收到，请重试或使用旁边的备用邮箱联系。表单内容已保留。" : "申请未确认收到，请稍后重试。表单内容已保留。");
     } finally {

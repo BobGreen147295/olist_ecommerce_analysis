@@ -36,13 +36,13 @@ test('public pilot, sample report and privacy omit demo identity; admin stays pr
   }
 });
 
-function form(api, fetch) {
+function form(api, fetch, contact = 'founder@example.com') {
   const pageModule = { exports: {} };
   const changes = [];
   let index = 0;
   vm.runInNewContext(compile(read('../src/app/pilot/PilotApplicationForm.tsx')), {
     module: pageModule, exports: pageModule.exports,
-    process: { env: { NEXT_PUBLIC_REVENUEOPS_API_URL: api, NEXT_PUBLIC_REVENUEOPS_CONTACT_EMAIL: 'founder@example.com' } },
+    process: { env: { NEXT_PUBLIC_REVENUEOPS_API_URL: api, NEXT_PUBLIC_REVENUEOPS_CONTACT_EMAIL: contact } },
     FormData: class { entries() { return [['contact_email', 'operator@example.com']]; } }, fetch,
     require(name) {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
@@ -75,4 +75,19 @@ test('network and rejected submissions retain form and point to backup email', a
 test('home introduction and workspace both retain bottom application exits', () => {
   assert.match(read('../src/components/LeadInExperience.tsx'), /className="demo-conversion"[\s\S]*href="\/pilot#apply"/);
   assert.match(read('../src/app/page.tsx'), /className="card homepage-conversion"[\s\S]*href="\/pilot#apply"/);
+});
+
+test('default public contact is approved Gmail, not job-search Outlook', () => {
+  const { output } = form(undefined, () => assert.fail('no API call'), '');
+  assert.equal(output.find((node) => node.type === 'a').props.children, 'gbob4549@gmail.com');
+  assert.doesNotMatch(JSON.stringify(output), /duan\.hongbo@outlook\.com/);
+});
+
+test('successful form confirms storage, not automatic email or response deadline', async () => {
+  let reset = false;
+  const { output, changes } = form('https://example.invalid', async () => ({ok: true, json: async () => ({application_id: 'synthetic'})}));
+  await output.find((node) => node.type === 'form').props.onSubmit({preventDefault() {}, currentTarget: {reset() {reset = true;}}});
+  assert.equal(reset, true);
+  assert.ok(changes.some(([key, text]) => key === 0 && /申请已保存.*不是自动确认邮件/.test(text)));
+  assert.doesNotMatch(changes.map((entry) => entry[1]).join(' '), /2 个工作日|邮件已发送/);
 });

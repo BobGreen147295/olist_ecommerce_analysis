@@ -54,7 +54,7 @@ test('401 and 403 offer account switching without deleting the session until cli
     assert.match(page.state[1], /管理员账号.*登录/);
     assert.equal(page.state[0].length, 0);
     assert.deepEqual(page.removed, []);
-    const statusCard = page.render().props.children[1];
+    const statusCard = page.render().props.children.find((node) => node?.type === 'section' && node.props.role === 'status');
     const action = statusCard.props.children[1];
     assert.equal(action.props.href, '/data');
     assert.equal(action.props.children, '切换管理员账号');
@@ -96,5 +96,14 @@ test('unmount aborts and ignores late success or failure', async () => {
     await flush();
     assert.equal(page.state[0].length, 0);
     assert.equal(page.state[1], '正在读取申请…');
+  }
+});
+
+test('notification configuration is not displayed as proof of delivery', async () => {
+  for (const configured of [false, true]) {
+    const page = mount({fetch: async () => ({ok: true, json: async () => ({applications: [], owner_notification_configured: configured})})});
+    await flush();
+    assert.match(page.state[2], configured ? /配置成功不代表邮件已送达/ : /尚未启用/);
+    page.cleanup();
   }
 });

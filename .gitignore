@@ -26,6 +26,12 @@ Thumbs.db
 *.jpg
 *.jpeg
 
+# Local deployment credentials; only placeholder examples may be committed.
+.env*
+!.env.example
+api/.env*
+!api/.env.example
+
 # 本地分析数据与导出文件不得提交到 GitHub
 data/raw/
 data/processed/

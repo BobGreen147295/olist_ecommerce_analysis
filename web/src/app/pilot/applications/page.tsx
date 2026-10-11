@@ -10,6 +10,7 @@ type Application = { application_id: string; contact_email: string; shop_domain:
 export default function PilotApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [message, setMessage] = useState("正在读取申请…");
+  const [notificationMessage, setNotificationMessage] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -27,6 +28,9 @@ export default function PilotApplicationsPage() {
       if (!response.ok) throw new Error(data.error ?? "无法读取申请");
       setApplications(data.applications ?? []);
       setMessage(data.applications?.length ? "" : "目前还没有试点申请。");
+      setNotificationMessage(data.owner_notification_configured
+        ? "新申请提醒已配置，仅发送至 gbob4549@gmail.com；配置成功不代表邮件已送达，请以本列表为准。"
+        : "自动邮件提醒尚未启用，请在本列表查看申请。备用邮箱链接不会自动发送邮件。");
     }
     void loadApplications().catch((error) => {
       if (!controller.signal.aborted) setMessage(error instanceof Error ? error.message : "无法读取申请");
@@ -36,6 +40,7 @@ export default function PilotApplicationsPage() {
 
   return <main className="page-content">
     <section className="section-heading"><div><p className="eyebrow">PILOT OPERATIONS</p><h1>试点申请</h1></div><Link className="button button-ghost" href="/pilot">查看公开页面</Link></section>
+    {notificationMessage && <p role="status">{notificationMessage}</p>}
     {message && <section className="card" role="status"><p>{message}</p>{message.includes("登录") && <Link className="button button-primary" href="/data" onClick={() => sessionStorage.removeItem("revenueops_access_token")}>切换管理员账号</Link>}</section>}
     {applications.length > 0 && <section className="card pilot-applications-table"><table><thead><tr><th>提交时间</th><th>店铺</th><th>联系邮箱</th><th>订单量</th><th>问题</th></tr></thead><tbody>{applications.map((item) => <tr key={item.application_id}><td>{new Date(item.created_at).toLocaleString("zh-CN")}</td><td>{item.shop_domain}</td><td>{item.contact_email}</td><td>{item.monthly_orders}</td><td>{CHALLENGES[item.challenge] ?? item.challenge}</td></tr>)}</tbody></table></section>}
   </main>;
