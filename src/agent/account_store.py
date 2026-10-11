@@ -99,7 +99,7 @@ def _initialize_schema() -> None:
 
 
 def ensure_admin_account(username: str, password: str, reset_password: bool = False) -> None:
-    """首次启动时创建管理员；仅在显式请求时重置已有管理员密码。"""
+    """创建配置指定的管理员；同名普通账号须匹配配置密码才可恢复角色。"""
     if not username or not password:
         return
     _initialize_schema()
@@ -107,15 +107,25 @@ def ensure_admin_account(username: str, password: str, reset_password: bool = Fa
     try:
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT username FROM app_users WHERE username = {placeholder}", (username,)
+            f"SELECT password_hash, role, enabled FROM app_users WHERE username = {placeholder}", (username,)
         )
-        if cursor.fetchone() is None:
+        existing = cursor.fetchone()
+        if existing is None:
             cursor.execute(
                 f"INSERT INTO app_users (username, password_hash, role, enabled, created_at) "
                 f"VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})",
                 (username, _hash_password(password), "admin", True, _now()),
             )
             conn.commit()
+        elif existing[1] != "admin" and not reset_password:
+            if not _verify_password(password, existing[0]):
+                raise RuntimeError("管理员配置与现有账号不匹配，需要维护者核对")
+            if existing[2]:
+                cursor.execute(
+                    f"UPDATE app_users SET role = {placeholder} WHERE username = {placeholder}",
+                    ("admin", username),
+                )
+                conn.commit()
         elif reset_password:
             cursor.execute(
                 f"UPDATE app_users SET password_hash = {placeholder}, enabled = {placeholder} "

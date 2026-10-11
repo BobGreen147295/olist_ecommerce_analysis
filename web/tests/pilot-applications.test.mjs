@@ -7,6 +7,8 @@ import ts from 'typescript';
 // Exercise the page's effect with synthetic responses, without a server or credentials.
 function mount({ token = 'synthetic-token', api = 'https://example.invalid', fetch } = {}) {
   const state = [];
+  const removed = [];
+  let stateIndex = 0;
   let effect;
   const pageModule = { exports: {} };
   const source = fs.readFileSync(new URL('../src/app/pilot/applications/page.tsx', import.meta.url), 'utf8');
@@ -16,23 +18,23 @@ function mount({ token = 'synthetic-token', api = 'https://example.invalid', fet
   vm.runInNewContext(code, {
     module: pageModule, exports: pageModule.exports, AbortController, Error,
     process: { env: { NEXT_PUBLIC_REVENUEOPS_API_URL: api } },
-    sessionStorage: { getItem: () => token }, fetch,
+    sessionStorage: { getItem: () => token, removeItem: (key) => removed.push(key) }, fetch,
     require: (name) => {
       if (name === 'react') return {
         useEffect: (callback) => { effect = callback; },
         useState: (initial) => {
-          const index = state.length;
-          state.push(initial);
-          return [initial, (value) => { state[index] = value; }];
+          const index = stateIndex++;
+          if (index === state.length) state.push(initial);
+          return [state[index], (value) => { state[index] = value; }];
         },
       };
-      if (name === 'react/jsx-runtime') return { jsx: () => null, jsxs: () => null };
+      if (name === 'react/jsx-runtime') return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
       if (name === 'next/link') return { default: () => null };
       throw new Error(`Unexpected import: ${name}`);
     },
   });
   pageModule.exports.default();
-  return { state, cleanup: effect() };
+  return { state, removed, cleanup: effect(), render: () => { stateIndex = 0; return pageModule.exports.default(); } };
 }
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const response = (applications) => ({ ok: true, json: async () => ({ applications }) });
@@ -41,7 +43,23 @@ test('missing token or API never requests application data', async () => {
   for (const options of [{ token: null }, { api: null }]) {
     const page = mount({ ...options, fetch: () => assert.fail('unexpected request') });
     await flush();
-    assert.match(page.state[1], /管理员账号登录/);
+    assert.match(page.state[1], options.api === null ? /申请服务尚未配置/ : /管理员账号登录/);
+    page.cleanup();
+  }
+});
+test('401 and 403 offer account switching without deleting the session until clicked', async () => {
+  for (const status of [401, 403]) {
+    const page = mount({ fetch: async () => ({ ok: false, status, json: async () => ({ error: 'denied' }) }) });
+    await flush();
+    assert.match(page.state[1], /管理员账号.*登录/);
+    assert.equal(page.state[0].length, 0);
+    assert.deepEqual(page.removed, []);
+    const statusCard = page.render().props.children[1];
+    const action = statusCard.props.children[1];
+    assert.equal(action.props.href, '/data');
+    assert.equal(action.props.children, '切换管理员账号');
+    action.props.onClick();
+    assert.deepEqual(page.removed, ['revenueops_access_token']);
     page.cleanup();
   }
 });

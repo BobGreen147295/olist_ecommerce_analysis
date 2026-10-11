@@ -431,7 +431,7 @@ def create_app() -> Flask:
         if request.method == "OPTIONS":
             return "", 204
         provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
-        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "copilot-verified-session-2026-10-08"})
+        return jsonify({"status": "ok", "service": "olist-revenueops-api", "llm_provider": provider, "sync_revision": "trend-diagnostics-v1", "release": "admin-bootstrap-2026-10-11"})
 
     @app.route("/v1/public-intelligence", methods=["GET", "OPTIONS"])
     def public_intelligence() -> Any:
@@ -504,8 +504,13 @@ def create_app() -> Flask:
         if not isinstance(username, str) or not isinstance(password, str):
             return jsonify({"error": "用户名或密码格式无效"}), 400
         try:
-            from src.agent.account_store import authenticate_user
+            from src.agent.account_store import authenticate_user, ensure_admin_account
             from src.agent.auth_session_store import SESSION_TTL_SECONDS, issue_session
+            admin_username = os.environ.get("APP_ADMIN_USERNAME", "").strip()
+            admin_password = os.environ.get("APP_ADMIN_PASSWORD", "")
+            if (admin_username and admin_password and username.strip() == admin_username
+                    and hmac.compare_digest(password.encode("utf-8"), admin_password.encode("utf-8"))):
+                ensure_admin_account(admin_username, admin_password)
             user = authenticate_user(username.strip(), password)
             if not user:
                 return jsonify({"error": "用户名或密码不正确"}), 401
