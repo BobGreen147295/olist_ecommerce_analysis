@@ -5,6 +5,13 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../scripts/pilot-notification.gs'), 'utf8');
 
+test('manifest explicitly requests send-mail only; source cannot trigger inbox service detection', () => {
+  const manifest = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, '../scripts/appsscript.json'), 'utf8'));
+  assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/script.send_mail']);
+  assert.equal(manifest.runtimeVersion, 'V8');
+  assert.doesNotMatch(source, /\bGmailApp\b/);
+});
+
 function harness({quota = 100, locked = false, failSend = false} = {}) {
   const properties = new Map([['PILOT_NOTIFICATION_SECRET', crypto.randomBytes(32).toString('hex')]]);
   const sent = [];

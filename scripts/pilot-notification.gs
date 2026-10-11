@@ -1,4 +1,4 @@
-// Deploy as an owner-executed Apps Script web app. Never uses GmailApp/inbox scopes.
+// Deploy as an owner-executed Apps Script web app with the send-only manifest.
 // Store PILOT_NOTIFICATION_SECRET (32+ random characters) in Script Properties.
 function doPost(e) {
   const reply = (value) => ContentService.createTextOutput(JSON.stringify(value))
