@@ -330,11 +330,26 @@ def _format_agent_answer(result: dict[str, Any]) -> str:
     from src.agent.knowledge import render_knowledge
     knowledge = result.get("knowledge_sources", [])
     if result.get("knowledge_only"):
-        return render_knowledge(knowledge)
+        return result.get("analysis") or render_knowledge(knowledge)
     if knowledge:
         # Keep the existing business answer, but append retrieved originals separately.
         return _format_agent_answer({**result, "knowledge_sources": []}) + "\n\n产品方法依据（不是店铺事实）：\n" + render_knowledge(knowledge)
     if result.get("error"):
+        code = result.get("error_code")
+        safe_errors = {
+            "model_authentication_failed": "模型服务认证失败，请维护者核对服务端密钥；无需重新登录网站。",
+            "model_permission_denied": "模型服务访问权限不足，请维护者核对项目与模型权限。",
+            "model_not_found": "模型或服务地址不可用，请维护者核对配置。",
+            "model_quota_exceeded": "模型服务额度或计费上限已到，请维护者核对，不要连续重试。",
+            "model_rate_limited": "模型提供方暂时限流，请稍后再试；不会自动重试。",
+            "model_timeout": "模型服务响应超时，请稍后再试；本次不会自动重试。",
+            "model_connection_failed": "无法连接模型服务，请维护者核对网络和服务地址。",
+            "model_unavailable": "模型服务暂不可用，请维护者核对配置与服务状态。",
+            "model_response_invalid": "模型未返回有效的策略结构。",
+            "evidence_verification_failed": "分析结果未通过证据核验，不能交付可靠结论。",
+        }
+        if code in safe_errors:
+            return f"{safe_errors[code]}本次未生成执行建议。错误编号：{code}"
         if result.get("verification", {}).get("analysis_attempts", 0):
             return "本次分析未通过核验或分析服务不可用，不能交付可靠结论；没有生成执行建议。请稍后重试或人工核对原始数据。"
         return "当前账户没有成功取得可用经营数据，本次不能生成经营结论或执行建议。请检查数据连接、覆盖范围和同步状态。"
@@ -346,7 +361,9 @@ def _format_agent_answer(result: dict[str, Any]) -> str:
 
     draft = next((item for item in action_drafts if isinstance(item, dict)), {})
     title = _brief(draft.get("title"))
-    if not title or title == "基于当前诊断制定小规模验证任务":
+    if not action_drafts:
+        opening = "本次仅展示已取得的数据发现，没有生成可执行策略。"
+    elif not title or title == "基于当前诊断制定小规模验证任务":
         opening = "我建议先做一轮小规模验证，而不是马上扩大动作。"
     else:
         opening = f"我建议你优先做“{title}”。"
@@ -839,6 +856,10 @@ def create_app() -> Flask:
             from src.agent.agent_graph import run_with_history
 
             result = run_with_history(message.strip(), _safe_history(payload.get("history")), owner=session["username"])
+            if result.get("error"):
+                # Graph diagnostics are allowlisted; do not log prompts, provider
+                # response bodies, exceptions, account names or credentials.
+                app.logger.warning("Co-pilot failure: code=%s stage=%s", result.get("error_code") or "unclassified", result.get("error_stage") or "unknown")
             return jsonify({
                 "answer": _format_agent_answer(result),
                 "evidence": [
@@ -850,7 +871,9 @@ def create_app() -> Flask:
                 "knowledge_sources": result.get("knowledge_sources", []),
                 "verification": result.get("verification", {}),
                 "error": result.get("error"),
-                "mode": "agent",
+                "error_code": result.get("error_code"),
+                "error_stage": result.get("error_stage"),
+                "mode": "unavailable" if result.get("error") else "knowledge" if result.get("knowledge_only") else "agent",
             })
         except Exception as exc:  # Detailed exception stays server-side.
             app.logger.exception("Agent chat failed")

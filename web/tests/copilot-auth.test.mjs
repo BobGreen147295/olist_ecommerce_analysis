@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function setup({ token = 'synthetic-token', previous = token, status = 200, failure = false, switchDuringRequest = false } = {}) {
+function setup({ token = 'synthetic-token', previous = token, status = 200, failure = false, switchDuringRequest = false, payload = { answer: 'new-answer' } } = {}) {
   const source = fs.readFileSync(new URL('../src/components/CopilotPanel.tsx', import.meta.url), 'utf8');
   const tree = ts.createSourceFile('panel.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let handler;
@@ -17,15 +17,15 @@ function setup({ token = 'synthetic-token', previous = token, status = 200, fail
   const state = { token, messages: [{ role: 'assistant', content: 'previous-account-answer' }], calls: [], loading: false };
   const context = {
     draft: 'sales trend', isLoading: false, API_BASE_URL: 'https://example.invalid', messages: state.messages,
-    english: false, tx: (zh) => zh, sessionToken: { current: previous },
+    english: false, tx: (zh) => zh, sessionToken: { current: previous }, AbortSignal,
     sessionStorage: { getItem: () => state.token, removeItem: () => { state.token = null; } },
     setMessages: (update) => { state.messages = update(state.messages); }, setDraft: () => {},
-    setAgentMode: () => {}, setIsLoading: (value) => { state.loading = value; },
+    setAgentMode: value => { state.mode = value; }, setIsLoading: (value) => { state.loading = value; },
     fetch: async (url, options) => {
       state.calls.push({ url, options });
       if (switchDuringRequest) state.token = 'different-session';
       if (failure) throw new Error('unavailable');
-      return { status, ok: status === 200, json: async () => ({ answer: 'new-answer' }) };
+      return { status, ok: status === 200, json: async () => payload };
     },
   };
   const javascript = ts.transpileModule(`const send = ${handler}; send;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -70,5 +70,20 @@ test('account changed during request: old response never appears', async () => {
   const { state, send } = setup({ switchDuringRequest: true });
   await send({ preventDefault() {} });
   assert.ok(!state.messages.some((item) => item.content === 'new-answer'));
+  assert.equal(state.loading, false);
+});
+
+test('HTTP 200 with a failed analysis is not displayed as a healthy live Agent', async () => {
+  const { state, send } = setup({ payload: { answer: '模型认证失败 model_authentication_failed', error: 'failed', mode: 'unavailable' } });
+  await send({ preventDefault() {} });
+  assert.equal(state.mode, 'unavailable');
+  assert.match(state.messages.at(-1).content, /model_authentication_failed/);
+  assert.equal(state.token, 'synthetic-token');
+});
+
+test('method-only answer is labelled knowledge, not proof of a model call', async () => {
+  const { state, send } = setup({ payload: { answer: '审核过的方法说明', mode: 'knowledge' } });
+  await send({ preventDefault() {} });
+  assert.equal(state.mode, 'knowledge');
   assert.equal(state.loading, false);
 });

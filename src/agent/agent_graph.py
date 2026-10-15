@@ -20,7 +20,7 @@ from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
 from .tools import execute_tool, TOOL_REGISTRY
 from .observability import append_run_log, build_run_meta, diagnosis_validation_errors
-from .knowledge import retrieve_knowledge, is_knowledge_question, render_knowledge
+from .knowledge import retrieve_knowledge, is_knowledge_question, render_knowledge, render_knowledge_answer
 
 
 class AgentState(TypedDict, total=False):
@@ -39,6 +39,8 @@ class AgentState(TypedDict, total=False):
     validation_errors: list[str]
     diagnosis_verified: bool
     verification_status: str
+    error_code: str
+    error_stage: str
 
 
 # 可用工具元数据（给 LLM 看）
@@ -82,6 +84,30 @@ def _get_llm():
             kwargs["base_url"] = base_url
         return ChatOpenAI(**kwargs)
     raise ValueError(f"不支持的 LLM_PROVIDER: {provider}，可选 ollama/openai")
+
+
+def _model_failure(error: Exception, stage: str) -> dict:
+    """Allowlisted diagnostics only: never return exception text, keys or URLs."""
+    status = getattr(error, "status_code", None)
+    code = getattr(error, "code", None)
+    if code in {"insufficient_quota", "billing_hard_limit_reached", "organization_usage_limit_exceeded"}:
+        reason, message = "model_quota_exceeded", "模型服务额度或计费上限已到，请维护者核对；不要连续重试。"
+    elif status == 401:
+        reason, message = "model_authentication_failed", "模型服务认证失败，请维护者核对服务端密钥；不是你的网页登录失效。"
+    elif status == 403:
+        reason, message = "model_permission_denied", "模型服务拒绝访问，请维护者核对模型与项目权限。"
+    elif status == 404:
+        reason, message = "model_not_found", "模型或服务地址不可用，请维护者核对配置。"
+    elif status == 429:
+        reason, message = "model_rate_limited", "模型提供方暂时限流，请稍后再试；不会自动重试。"
+    elif isinstance(error, TimeoutError) or type(error).__name__ in {"APITimeoutError", "ReadTimeout", "ConnectTimeout"}:
+        reason, message = "model_timeout", "模型服务响应超时，请稍后再试；本次不会自动重试。"
+    elif isinstance(error, ConnectionError) or type(error).__name__ == "APIConnectionError":
+        reason, message = "model_connection_failed", "无法连接模型服务，请维护者核对网络和服务地址。"
+    else:
+        reason, message = "model_unavailable", "模型服务暂不可用，请维护者核对配置和服务状态。"
+    return {"error": message, "error_code": reason, "error_stage": stage,
+            "analysis": "", "diagnosis": {}, "recommendation": "", "action_drafts": []}
 
 
 def _format_history(history: list[dict], max_turns: int = 4) -> str:
@@ -164,8 +190,6 @@ def fetch_data_node(state: AgentState) -> dict:
     knowledge = retrieve_knowledge(query)
     if is_knowledge_question(query):
         return {"tool_results": [], "knowledge_sources": knowledge, "knowledge_only": True, "error": None}
-    llm = _get_llm()
-
     # 构建上下文
     history_text = _format_history(history)
 
@@ -189,7 +213,11 @@ def fetch_data_node(state: AgentState) -> dict:
 """
 
     try:
+        llm = _get_llm()
         resp = llm.invoke(prompt)
+    except Exception as exc:
+        return {**_model_failure(exc, "routing"), "tool_results": [], "knowledge_sources": knowledge}
+    try:
         raw = resp.content.strip()
         # 清理可能的 markdown 包裹
         if raw.startswith("```"):
@@ -198,7 +226,7 @@ def fetch_data_node(state: AgentState) -> dict:
         if not isinstance(tool_calls, list):
             raise ValueError("工具选择结果必须是 JSON 数组")
         tool_calls = tool_calls[:3]
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError):
         tool_calls = _fallback_tool_calls(query)
         # 路由失败不等于数据查询失败；只要保底工具能返回数据，后续分析仍应继续。
 
@@ -240,7 +268,7 @@ def fetch_data_node(state: AgentState) -> dict:
 def analyze_node(state: AgentState) -> dict:
     """LLM 基于数据做分析（含对话历史上下文）"""
     if state.get("knowledge_only"):
-        return {"analysis": render_knowledge(state.get("knowledge_sources", [])),
+        return {"analysis": render_knowledge_answer(state.get("user_query", ""), state.get("knowledge_sources", [])),
                 "diagnosis": {"findings": [], "data_sufficient": False}}
     if state.get("error"):
         return {"analysis": "数据查询失败，无法进行分析", "error": state["error"]}
@@ -248,7 +276,6 @@ def analyze_node(state: AgentState) -> dict:
     tool_results = state.get("tool_results", [])
     query = state.get("user_query", "")
     history = state.get("conversation_history", [])
-    llm = _get_llm()
 
     history_text = _format_history(history)
 
@@ -299,11 +326,11 @@ def analyze_node(state: AgentState) -> dict:
         prompt += "\n这是唯一一次修正机会。以下程序核验未通过，请仅根据相同数据修正 JSON，不增加数据、来源或权限：\n" + "\n".join(state["validation_errors"])
     attempts = state.get("analysis_attempts", 0) + 1
     try:
+        llm = _get_llm()
         resp = llm.invoke(prompt)
         analysis = resp.content.strip()
-    except Exception:
-        return {"analysis": "", "diagnosis": {}, "analysis_attempts": attempts,
-                "error": "分析服务暂不可用，本次停止，不自动重试。"}
+    except Exception as exc:
+        return {**_model_failure(exc, "analysis"), "analysis_attempts": attempts}
 
     diagnosis = {}
     try:
@@ -332,6 +359,7 @@ def verify_node(state: AgentState) -> dict:
         return {"verification_status": "repair_required", "diagnosis_verified": False, "validation_errors": errors}
     return {"verification_status": "failed", "diagnosis_verified": False,
             "error": "诊断经过一次修正后仍未通过证据核验，本次停止。",
+            "error_code": "evidence_verification_failed", "error_stage": "verification",
             "diagnosis": {"findings": [], "data_sufficient": False}, "analysis": "", "action_drafts": []}
 
 
@@ -358,7 +386,6 @@ def recommend_node(state: AgentState) -> dict:
     analysis = state.get("analysis", "")
     tool_results = state.get("tool_results", [])
     history = state.get("conversation_history", [])
-    llm = _get_llm()
 
     history_text = _format_history(history)
 
@@ -416,10 +443,11 @@ def recommend_node(state: AgentState) -> dict:
 """
 
     try:
+        llm = _get_llm()
         resp = llm.invoke(prompt)
         recommendation = resp.content.strip()
-    except Exception as e:
-        recommendation = f"策略生成失败: {str(e)}"
+    except Exception as exc:
+        return _model_failure(exc, "recommendation")
 
     action_drafts = []
     try:
@@ -427,25 +455,10 @@ def recommend_node(state: AgentState) -> dict:
         if isinstance(candidate.get("action_drafts"), list):
             action_drafts = candidate["action_drafts"]
     except (ValueError, json.JSONDecodeError):
-        pass
+        return {"error": "模型未返回有效的策略结构，本次不生成执行建议。", "error_code": "model_response_invalid",
+                "error_stage": "recommendation", "recommendation": "", "action_drafts": []}
     if not action_drafts:
-        action_drafts = [{
-            "priority": "P2",
-            "title": "基于当前诊断制定小规模验证任务",
-            "actions": ["先选择小样本人群", "设置对照组", "记录执行结果"],
-            "audience": "待确认",
-            "channel": "待确认",
-            "budget": None,
-            "duration_days": 7,
-            "market": "待确认",
-            "timezone": "UTC",
-            "locale": "待确认",
-            "attribution_window_days": 7,
-            "consent_basis": "待商家确认",
-            "expected_metric": "待确认",
-            "expected_effect": "需通过 A/B 测试验证",
-            "status": "draft",
-        }]
+        return {"recommendation": "本次没有生成可执行策略，不补造通用任务。", "action_drafts": []}
     return {"recommendation": _render_actions(action_drafts), "action_drafts": action_drafts}
 
 
@@ -506,6 +519,8 @@ def run_with_history(user_query: str, history: list[dict] = None, *, owner: str)
         "diagnosis": result.get("diagnosis", {}),
         "action_drafts": result.get("action_drafts", []),
         "error": result.get("error"),
+        "error_code": result.get("error_code"),
+        "error_stage": result.get("error_stage"),
         "knowledge_sources": result.get("knowledge_sources", []),
         "knowledge_only": result.get("knowledge_only", False),
         "verification": {"status": result.get("verification_status", "not_checked"),

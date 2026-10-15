@@ -149,6 +149,8 @@ def build_run_meta(
         "action_count": len(result.get("action_drafts", []) or []),
         "structured_output": bool(isinstance(diagnosis, dict) and diagnosis.get("findings")),
         "error": result.get("error"),
+        "error_code": result.get("error_code"),
+        "error_stage": result.get("error_stage"),
         "model_provider": provider,
         "model_name": model_name,
         **quality,

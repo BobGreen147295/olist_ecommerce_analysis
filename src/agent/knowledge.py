@@ -3,6 +3,23 @@
 import re
 
 
+# Shipped method shortcuts are not requests to measure the signed-in store.
+METHOD_SHORTCUTS = (
+    (("为什么要先做流失客户召回", "Why prioritize churn reactivation"), "召回复购",
+     "不一定要先做召回。只有历史、购买周期、营销同意和执行渠道足够时，才值得与其他机会比较；不能因演示排序就认定你的店应优先召回。"),
+    (("当前 ROI 可以相信吗", "Can I trust the current ROI"), "ROI",
+     "不能仅凭页面上的 ROI 估算认定已产生收益。应先核对成本、对照组、归因窗口和真实执行回执；这里解释判断方法，不是在核实你店铺的当前 ROI。"),
+    (("还缺哪些数据连接", "Which data connections are missing"), "订单金额 利润 复购",
+     "这是数据准备清单，不是当前账号的连接状态检查：先核对订单金额、币种和时间范围，再补匿名客户标识与购买周期；分析利润或增量还需成本、渠道回执和对照组。具体连接状态请查看数据页。"),
+)
+
+
+def _method_shortcut(query: str):
+    normalized = re.sub(r"[\s?？!！。.，,]", "", query.casefold())
+    return next((item for item in METHOD_SHORTCUTS
+                 if any(normalized == re.sub(r"\s", "", alias.casefold()) for alias in item[0])), None)
+
+
 # ponytail: curated keyword retrieval for four records; evaluate recall before adding embeddings.
 DOCUMENTS = (
     {
@@ -34,7 +51,8 @@ DOCUMENTS = (
 
 def retrieve_knowledge(query: str) -> list[dict]:
     """Return only authored product rules, not policy news or private documents."""
-    normalized = query.casefold()
+    shortcut = _method_shortcut(query)
+    normalized = shortcut[1].casefold() if shortcut else query.casefold()
     ranked = []
     for document in DOCUMENTS:
         score = sum(
@@ -52,11 +70,18 @@ def retrieve_knowledge(query: str) -> list[dict]:
 
 def is_knowledge_question(query: str) -> bool:
     normalized = query.casefold()
+    if _method_shortcut(query):
+        return True
     # Explicit definitions only; store-specific measurements stay on the data path.
     return any(term in normalized for term in (
         "是什么意思", "什么是", "如何定义", "怎么定义", "定义是什么", "怎么算", "如何计算",
         "计算公式", "需要哪些数据", "what is", "definition", "how to calculate",
-    )) and not any(term in normalized for term in ("本月", "上月", "我的店", "我们店", "my store", "this month"))
+    )) and not any(term in normalized for term in ("本月", "上月", "本周", "上周", "昨天", "今天", "我的", "我们店", "这家店", "my store", "our store", "this month", "last month", "this week", "yesterday", "today"))
+
+
+def render_knowledge_answer(query: str, documents: list[dict]) -> str:
+    shortcut = _method_shortcut(query)
+    return (shortcut[2] + "\n\n产品方法依据（不是店铺事实）：\n" if shortcut else "") + render_knowledge(documents)
 
 
 def render_knowledge(documents: list[dict]) -> str:
