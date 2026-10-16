@@ -341,7 +341,7 @@ def _format_agent_answer(result: dict[str, Any]) -> str:
             "model_permission_denied": "模型服务访问权限不足，请维护者核对项目与模型权限。",
             "model_not_found": "模型或服务地址不可用，请维护者核对配置。",
             "model_quota_exceeded": "模型服务额度或计费上限已到，请维护者核对，不要连续重试。",
-            "model_rate_limited": "模型提供方暂时限流，请稍后再试；不会自动重试。",
+            "model_rate_limited": "模型提供方返回 429，请维护者核对限流与额度；不会自动重试。",
             "model_timeout": "模型服务响应超时，请稍后再试；本次不会自动重试。",
             "model_connection_failed": "无法连接模型服务，请维护者核对网络和服务地址。",
             "model_unavailable": "模型服务暂不可用，请维护者核对配置与服务状态。",
@@ -859,7 +859,7 @@ def create_app() -> Flask:
             if result.get("error"):
                 # Graph diagnostics are allowlisted; do not log prompts, provider
                 # response bodies, exceptions, account names or credentials.
-                app.logger.warning("Co-pilot failure: code=%s stage=%s", result.get("error_code") or "unclassified", result.get("error_stage") or "unknown")
+                app.logger.warning("Co-pilot failure: code=%s stage=%s provider_status=%s provider_code=%s", result.get("error_code") or "unclassified", result.get("error_stage") or "unknown", result.get("provider_status"), result.get("provider_error_code") or "unclassified")
             return jsonify({
                 "answer": _format_agent_answer(result),
                 "evidence": [

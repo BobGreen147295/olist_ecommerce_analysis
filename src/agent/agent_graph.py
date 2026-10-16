@@ -41,6 +41,8 @@ class AgentState(TypedDict, total=False):
     verification_status: str
     error_code: str
     error_stage: str
+    provider_status: int | None
+    provider_error_code: str
 
 
 # 可用工具元数据（给 LLM 看）
@@ -90,7 +92,11 @@ def _model_failure(error: Exception, stage: str) -> dict:
     """Allowlisted diagnostics only: never return exception text, keys or URLs."""
     status = getattr(error, "status_code", None)
     code = getattr(error, "code", None)
-    if code in {"insufficient_quota", "billing_hard_limit_reached", "organization_usage_limit_exceeded"}:
+    quota_codes = ("insufficient_quota", "billing_hard_limit_reached", "organization_usage_limit_exceeded",
+                   "credit_balance_exhausted", "organization_spend_limit_exceeded", "project_spend_limit_exceeded")
+    quota_type = getattr(error, "type", None) == "insufficient_quota"
+    safe_code = code if code in quota_codes + ("slow_down", "rate_limit_exceeded") else "insufficient_quota" if quota_type else "unclassified"
+    if code in quota_codes or quota_type:
         reason, message = "model_quota_exceeded", "模型服务额度或计费上限已到，请维护者核对；不要连续重试。"
     elif status == 401:
         reason, message = "model_authentication_failed", "模型服务认证失败，请维护者核对服务端密钥；不是你的网页登录失效。"
@@ -99,7 +105,7 @@ def _model_failure(error: Exception, stage: str) -> dict:
     elif status == 404:
         reason, message = "model_not_found", "模型或服务地址不可用，请维护者核对配置。"
     elif status == 429:
-        reason, message = "model_rate_limited", "模型提供方暂时限流，请稍后再试；不会自动重试。"
+        reason, message = "model_rate_limited", "模型提供方返回 429，请维护者核对限流与额度；不会自动重试。"
     elif isinstance(error, TimeoutError) or type(error).__name__ in {"APITimeoutError", "ReadTimeout", "ConnectTimeout"}:
         reason, message = "model_timeout", "模型服务响应超时，请稍后再试；本次不会自动重试。"
     elif isinstance(error, ConnectionError) or type(error).__name__ == "APIConnectionError":
@@ -107,6 +113,8 @@ def _model_failure(error: Exception, stage: str) -> dict:
     else:
         reason, message = "model_unavailable", "模型服务暂不可用，请维护者核对配置和服务状态。"
     return {"error": message, "error_code": reason, "error_stage": stage,
+            "provider_status": status if isinstance(status, int) and 400 <= status <= 599 else None,
+            "provider_error_code": safe_code,
             "analysis": "", "diagnosis": {}, "recommendation": "", "action_drafts": []}
 
 
@@ -521,6 +529,8 @@ def run_with_history(user_query: str, history: list[dict] = None, *, owner: str)
         "error": result.get("error"),
         "error_code": result.get("error_code"),
         "error_stage": result.get("error_stage"),
+        "provider_status": result.get("provider_status"),
+        "provider_error_code": result.get("provider_error_code"),
         "knowledge_sources": result.get("knowledge_sources", []),
         "knowledge_only": result.get("knowledge_only", False),
         "verification": {"status": result.get("verification_status", "not_checked"),

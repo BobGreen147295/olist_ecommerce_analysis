@@ -79,6 +79,28 @@ class CopilotRepairTests(unittest.TestCase):
         self.assertEqual(result['error_code'], 'evidence_verification_failed')
         self.assertIn('未通过证据核验', _format_agent_answer(result))
 
+    def test_billing_429_is_not_misreported_as_temporary_throttling(self):
+        for code in ('credit_balance_exhausted', 'organization_spend_limit_exceeded',
+                     'project_spend_limit_exceeded'):
+            with self.subTest(code=code):
+                error = RuntimeError('private-provider-body')
+                error.status_code, error.code = 429, code
+                result = agent_graph._model_failure(error, 'routing')
+                self.assertEqual(result['error_code'], 'model_quota_exceeded')
+                self.assertEqual(result['provider_error_code'], code)
+                self.assertNotIn('private-provider-body', json.dumps(result))
+        error = RuntimeError('private-provider-body')
+        error.status_code, error.code, error.type = 429, None, 'insufficient_quota'
+        self.assertEqual(agent_graph._model_failure(error, 'routing')['error_code'], 'model_quota_exceeded')
+
+    def test_provider_diagnostics_never_echo_unrecognized_codes(self):
+        error = RuntimeError('private-provider-body')
+        error.status_code, error.code, error.type = 429, 'private-token-value', 'private-account-value'
+        result = agent_graph._model_failure(error, 'routing')
+        self.assertEqual(result['provider_error_code'], 'unclassified')
+        self.assertEqual(result['provider_status'], 429)
+        self.assertNotIn('private-', json.dumps(result))
+
     def test_empty_recommendations_do_not_invent_a_generic_task(self):
         model = SimpleNamespace(invoke=Mock(return_value=SimpleNamespace(content='{"action_drafts": []}')))
         with patch.object(agent_graph, '_get_llm', return_value=model):
