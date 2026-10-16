@@ -1,5 +1,6 @@
 """Co-pilot shortcut and failure regressions; scripted models, no paid calls."""
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -9,6 +10,23 @@ from src.agent import agent_graph, knowledge
 
 
 class CopilotRepairTests(unittest.TestCase):
+    def test_luna_uses_bounded_non_reasoning_chat_parameters(self):
+        # Capture the actual SDK payload without making a provider request.
+        with patch.dict(os.environ, {
+            'LLM_PROVIDER': 'openai', 'OPENAI_MODEL': 'gpt-5.6-luna',
+            'OPENAI_API_KEY': 'synthetic-not-a-key',
+        }):
+            model = agent_graph._get_llm()
+        payload = model._get_request_payload('Reply OK')
+        self.assertEqual(payload['model'], 'gpt-5.6-luna')
+        self.assertEqual(payload['max_completion_tokens'], 1200)
+        self.assertEqual(payload['reasoning_effort'], 'none')
+        self.assertFalse(payload['store'])
+        self.assertNotIn('temperature', payload)
+        self.assertNotIn('max_tokens', payload)
+        self.assertEqual(model.max_retries, 0)
+        self.assertEqual(model.request_timeout, 30)
+
     def test_all_shipped_shortcuts_are_method_answers_without_model_or_store_access(self):
         queries = [
             '为什么要先做流失客户召回？', 'Why prioritize churn reactivation?',

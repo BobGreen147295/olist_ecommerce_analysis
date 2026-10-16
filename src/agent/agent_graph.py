@@ -81,6 +81,11 @@ def _get_llm():
             "timeout": 30,
             "max_retries": 0,
         }
+        if kwargs["model"] == "gpt-5.6-luna":
+            # Keep this migration explicit; do not change other providers/models.
+            kwargs.pop("temperature")
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+            kwargs.update(reasoning_effort="none", store=False)
         base_url = os.environ.get("OPENAI_BASE_URL")
         if base_url:
             kwargs["base_url"] = base_url
