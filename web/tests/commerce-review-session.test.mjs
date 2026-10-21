@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function setup({ token = 'account-a', changedBefore = false, changedAfter = false, status = 200 } = {}) {
+function setup({ token = 'account-a', changedBefore = false, changedAfter = false, status = 200, invalidJSON = false, offline = false } = {}) {
   const source = ts.createSourceFile('reviews.tsx', fs.readFileSync(new URL('../src/app/reviews/page.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let request;
   function visit(node) {
@@ -17,7 +17,7 @@ function setup({ token = 'account-a', changedBefore = false, changedAfter = fals
   const run = vm.runInNewContext(javascript, { session: token, api: 'https://merchant.example', sessionKey: 'revenueops_access_token', AbortSignal,
     sessionStorage: { getItem: () => state.token, removeItem: () => { state.token = null; } },
     onSessionChange: next => { state.sessionChanged = next; },
-    fetch: async (url, options) => { state.calls.push({ url, options }); if (changedAfter) state.token = 'account-b'; return { status, ok: status === 200, json: async () => ({ reviews: ['private-account-a'], error: 'service unavailable' }) }; },
+    fetch: async (url, options) => { state.calls.push({ url, options }); if (changedAfter) state.token = 'account-b'; if (offline) throw new TypeError('Failed to fetch'); return { status, ok: status === 200, json: async () => { if (invalidJSON) throw new SyntaxError('private HTML response'); return { reviews: ['private-account-a'], error: 'service unavailable' }; } }; },
   });
   return { state, run };
 }
@@ -38,4 +38,10 @@ test('account switching before or during a request discards the old private resu
 test('401 invalidates the session while a service failure preserves sign-in and exposes no substituted data', async () => {
   const expired = setup({ status: 401 }); await assert.rejects(expired.run(''), /登录已失效/); assert.equal(expired.state.token, null); assert.equal(expired.state.sessionChanged, null);
   const outage = setup({ status: 503 }); await assert.rejects(outage.run(''), /service unavailable/); assert.equal(outage.state.token, 'account-a'); assert.equal(outage.state.sessionChanged, undefined);
+});
+test('HTML errors, network failures and expired sessions recover without exposing transport details or clearing valid sign-in', async () => {
+  for (const option of [{ status: 404, invalidJSON: true }, { status: 503, invalidJSON: true }, { offline: true }]) {
+    const failed = setup(option); await assert.rejects(failed.run(''), /请重试/); assert.equal(failed.state.token, 'account-a');
+  }
+  const expired = setup({ status: 401, invalidJSON: true }); await assert.rejects(expired.run(''), /登录已失效/); assert.equal(expired.state.token, null);
 });

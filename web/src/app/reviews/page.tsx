@@ -36,6 +36,8 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
   const [snapshot, setSnapshot] = useState<ReviewSnapshot | null>(null), [ai, setAI] = useState<ReviewAI | null>(null);
   const [taskId, selectTask] = useState<string | null>(null);
   const [notice, setNotice] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true);
+  const [connection, setConnection] = useState<"checking" | "ready" | "unavailable">("checking"), [aiAccess, setAIAccess] = useState(false);
+  const [connectionVersion, reconnect] = useState(0), historyLoaded = useRef(false);
   const [decision, setDecision] = useState<CommerceReview["input"]["decision"]>("investigate");
   const [note, setNote] = useState(""), [nextAction, setNextAction] = useState(""), [dueOn, setDueOn] = useState(nextWeek), [outcome, setOutcome] = useState("");
   const [platform, setPlatform] = useState("综合"), [question, setQuestion] = useState("请核对两期订单变化的解释边界，结合相关资料列出待验证假设与下一步检查。");
@@ -50,21 +52,28 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
     if (!session || !api) throw new Error("请先登录并确认复盘服务已配置 / Sign in and configure the review service");
     const current = () => sessionStorage.getItem(sessionKey) === session;
     if (!current()) { onSessionChange(sessionStorage.getItem(sessionKey)); throw new Error("账户已切换 / Account changed"); }
-    const response = await fetch(api + "/v1/commerce" + path, { method, cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
-    const data = response.status === 204 ? {} : await response.json();
+    let response: Response;
+    try { response = await fetch(api + "/v1/commerce" + path, { method, cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) }); }
+    catch { throw new Error("连接未完成，请重试；已保存的复盘不会因此删除 / Connection failed. Retry; saved reviews are retained."); }
+    const data = response.status === 204 ? {} : await response.json().catch(() => null);
     if (!current()) { onSessionChange(sessionStorage.getItem(sessionKey)); throw new Error("账户已切换 / Account changed"); }
     if (response.status === 401) { sessionStorage.removeItem(sessionKey); onSessionChange(null); throw new Error("登录已失效 / Session expired"); }
-    if (!response.ok) throw new Error(data.error || "复盘未完成 / Review unavailable");
+    if (!response.ok || !data) throw new Error(data?.error || "复盘服务暂不可用，请重试或前往数据页核对订单 / Review unavailable. Retry or check orders on Data connections.");
     return data as T;
   }, [session, onSessionChange]);
   useEffect(() => {
     if (!session || !api) return;
     const controller = new AbortController();
-    request<{ reviews: CommerceReview[] }>("", "GET", undefined, controller.signal).then(result => { if (!controller.signal.aborted) { setReviews(result.reviews); select(result.reviews[0]?.id ?? null); setOutcome(result.reviews[0]?.outcome ?? ""); } })
-      .catch(e => { if (!controller.signal.aborted) setNotice(String(e.message)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    request<{ configured: boolean; aiEnabled: boolean; reviews: CommerceReview[] }>("", "GET", undefined, controller.signal).then(result => {
+      if (controller.signal.aborted) return;
+      if (!result.configured || !Array.isArray(result.reviews)) throw new Error("复盘服务尚未就绪 / Review service is not ready");
+      setReviews(result.reviews); setConnection("ready"); setAIAccess(result.aiEnabled === true);
+      if (!historyLoaded.current) { select(result.reviews[0]?.id ?? null); setOutcome(result.reviews[0]?.outcome ?? ""); historyLoaded.current = true; }
+      setNotice("");
+    }).catch(e => { if (!controller.signal.aborted) { setConnection("unavailable"); setNotice(String(e.message)); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [request, session]);
+  }, [request, session, connectionVersion]);
   useEffect(() => {
     if (!selectedId || !session) return;
     const controller = new AbortController(); let active = false;
@@ -114,9 +123,14 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
   const output = task?.output;
   if (!api) return <p role="status">{tx("复盘服务尚未配置，请联系维护者。", "Review service is not configured. Contact support.")}</p>;
   return <>
-      <div className="review-toolbar"><p>{tx("核对和保存不消耗 AI 额度；不会同步店铺或执行营销。", "Checks and manual records use no AI quota and do not sync or change your store.")}</p><button className="button button-primary" disabled={busy || loading} onClick={() => void act(check)}>{busy ? tx("处理中…", "Working…") : tx("核对订单数据", "Check order data")}</button></div>
+      <section className="review-connection" aria-label={tx("复盘服务连接", "Review service connection")} aria-busy={loading}>
+        <div><h2>{loading ? tx("正在检查复盘连接", "Checking review connection") : connection === "ready" ? tx("复盘连接已确认", "Review connection checked") : tx("复盘连接尚未就绪", "Review connection is not ready")}</h2>
+          <p>{loading ? tx("只读取连接与记录，不调用模型。", "Reads connection and history without calling a model.") : connection === "ready" ? aiAccess ? tx("当前账户可保存复盘，AI 解读需主动生成。", "Your account can save reviews. AI runs only when requested.") : tx("当前账户可进行人工复盘，AI 解读尚未开放。", "Manual reviews are available. AI is not enabled for this account.") : tx("可能尚未配置或暂时断开。已保存记录不会因此删除，也不能据此判断没有历史复盘。", "The service may be unconfigured or temporarily unreachable. Saved reviews remain; this does not mean your history is empty.")}</p></div>
+        <div className="review-buttons"><button className="button button-ghost" disabled={busy || loading} onClick={() => { setLoading(true); reconnect(n => n + 1); }}>{tx("重新检查连接", "Recheck connection")}</button><Link className="button button-ghost" href="/data">{tx("前往数据页核对订单", "Check orders on Data connections")}</Link></div>
+      </section>
+      <div className="review-toolbar"><p>{tx("核对和保存不消耗 AI 额度；不会同步店铺或执行营销。", "Checks and manual records use no AI quota and do not sync or change your store.")}</p><button className="button button-primary" disabled={busy || loading || connection !== "ready"} onClick={() => void act(check)}>{busy ? tx("处理中…", "Working…") : tx("核对订单数据", "Check order data")}</button></div>
       <p role="status" className="review-notice">{notice || (loading ? tx("正在读取复盘记录…", "Loading reviews…") : tx("先核对订单，或选择一条历史复盘。", "Check orders or select a saved review."))}</p>
-      <div className="review-layout"><section className="card review-evidence" aria-label={tx("订单证据", "Order evidence")}>
+      {(connection === "ready" || evidence) && <div className="review-layout"><section className="card review-evidence" aria-label={tx("订单证据", "Order evidence")}>
         {selected && <p className="review-help">{tx("已保存的证据快照，当前查看不会重新查询订单。", "Saved evidence snapshot; viewing does not re-query orders.")}</p>}
         {evidence ? <><OrderComparisonCard report={evidence.report} fallback={tx("报告结构异常，请重新核对。", "Invalid report; check again.")} english={english}/>{/synthetic|合成|演示/i.test(evidence.report.source ?? "") && <strong className="review-synthetic">{tx("合成数据 · 仅供流程验收", "Synthetic data · Workflow validation only")}</strong>}</> : <><h2>{tx("先取得一份可核对的报告", "Start with evidence you can check")}</h2><p>{tx("使用当前账户的已关联来源；覆盖不足和快照过期会明确提示。", "Uses your account's current source. Incomplete coverage and stale snapshots are identified.")}</p><Link href="/data">{tx("检查数据连接", "Check data connections")}</Link></>}
       </section><aside className="card review-record">
@@ -128,8 +142,8 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
           : <form onSubmit={e => void save(e)}><h2>{tx("记录下一步", "Record the next check")}</h2><label>{tx("本次决定", "Decision")}<select value={decision} onChange={e => setDecision(e.target.value as typeof decision)}><option value="investigate">{tx("进一步核实", "Investigate")}</option><option value="need_data">{tx("补充数据", "Get more data")}</option><option value="no_action">{tx("暂不行动", "No action")}</option></select></label>
             <label>{tx("你的判断或待核实问题", "Your judgment or question")}<textarea required minLength={3} maxLength={1200} rows={3} value={note} onChange={e => setNote(e.target.value)}/></label>
             {decision !== "no_action" && <><label>{tx("下一步检查", "Next check")}<textarea required minLength={3} maxLength={600} rows={3} value={nextAction} onChange={e => setNextAction(e.target.value)}/></label><label>{tx("计划复盘日期", "Review date")}<input required type="date" value={dueOn} onChange={e => setDueOn(e.target.value)}/></label></>}
-            <button className="button button-primary" disabled={busy || snapshot?.report.status !== "ready"}>{tx("保存复盘记录", "Save review")}</button><p className="review-help">{tx("仅填写汇总判断，不填客户身份或密钥。人工保存不会发送至模型。", "Use aggregate notes only. No customer identities or keys. Saving does not call a model.")}</p></form>}
-      </aside></div>
+            <button className="button button-primary" disabled={busy || connection !== "ready" || snapshot?.report.status !== "ready"}>{tx("保存复盘记录", "Save review")}</button><p className="review-help">{tx("仅填写汇总判断，不填客户身份或密钥。人工保存不会发送至模型。", "Use aggregate notes only. No customer identities or keys. Saving does not call a model.")}</p></form>}
+      </aside></div>}
       {selected && <section className="card review-ai" aria-label={tx("AI 证据解读", "AI evidence interpretation")}><h2>{tx("把证据变成下一步检查", "Turn evidence into the next check")}</h2>
         <form onSubmit={e => void generate(e)}><label>{tx("行业资料范围", "Research scope")}<select value={platform} onChange={e => setPlatform(e.target.value)}>{["综合", "Shopify", "Amazon", "TikTok Shop", "eBay", "Walmart"].map(p => <option key={p}>{p}</option>)}</select></label><label>{tx("本次解读问题", "Question")}<textarea required minLength={3} maxLength={2000} rows={3} value={question} onChange={e => setQuestion(e.target.value)}/></label>
           <p className="review-help">{tx("主动生成会把汇总、原始判断和问题发送至已连接模型并消耗额度。完整解读保留七天，采纳行动随复盘保留至删除；回执可能含回答并长期保留。关键词检索的行业资料不证明本店变化原因，日期与市场适用性需核实。", "Generation sends aggregates, original judgment and your question to the connected model and uses quota. Full AI tasks are retained for seven days; adopted checks remain with the review until deleted. Receipts may retain answers longer. Keyword-matched research does not prove store-level causes; check dates and market applicability.")}</p>
@@ -149,6 +163,6 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
         </div>}
         {tasks.length > 1 && <label>{tx("本条复盘的近期解读", "Recent interpretations")}<select value={task?.id || ""} onChange={e => selectTask(e.target.value)}>{tasks.map(t => <option key={t.id} value={t.id}>{t.status} · {t.input.question}</option>)}</select></label>}
       </section>}
-      <section className="review-history"><h2>{tx("复盘记录", "Review history")}</h2><p className="review-help">{tx("仅当前账户可见，保留至删除；这里的检查不会创建或执行营销活动。", "Private to your account until deleted. These checks do not create or run campaigns.")}</p>{reviews.map(r => <button className="card" key={r.id} aria-pressed={r.id === selectedId} disabled={busy} onClick={() => choose(r)}><span>{r.completedAt ? tx("已回填", "Observation saved") : tx("待复盘", "Awaiting review")}{r.adoptedAction?.dueOn || r.input.dueOn ? ` / ${r.adoptedAction?.dueOn || r.input.dueOn}` : ""}</span><strong>{r.input.note}</strong></button>)}</section>
+      <section className="review-history"><h2>{tx("复盘记录", "Review history")}</h2><p className="review-help">{tx("仅当前账户可见，保留至删除；这里的检查不会创建或执行营销活动。", "Private to your account until deleted. These checks do not create or run campaigns.")}</p>{connection === "ready" && !reviews.length && <p>{tx("当前账户还没有复盘记录。先核对订单，再保存第一次判断。", "No saved reviews for this account. Check orders and record your first judgment.")}</p>}{reviews.map(r => <button className="card" key={r.id} aria-pressed={r.id === selectedId} disabled={busy} onClick={() => choose(r)}><span>{r.completedAt ? tx("已回填", "Observation saved") : tx("待复盘", "Awaiting review")}{r.adoptedAction?.dueOn || r.input.dueOn ? ` / ${r.adoptedAction?.dueOn || r.input.dueOn}` : ""}</span><strong>{r.input.note}</strong></button>)}</section>
     </>;
 }
