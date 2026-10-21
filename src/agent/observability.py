@@ -134,7 +134,7 @@ def build_run_meta(
     diagnosis = result.get("diagnosis", {}) or {}
     quality = evaluate_response_quality(result)
     provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
-    model_name = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") if provider in {"openai", "cloud"} else os.environ.get("OLLAMA_MODEL", "qwen3:8b")
+    model_name = "gpt-5.6-luna" if provider == "personal_plus" else os.environ.get("OPENAI_MODEL", "gpt-4o-mini") if provider in {"openai", "cloud"} else os.environ.get("OLLAMA_MODEL", "qwen3:8b")
     return {
         "run_id": uuid.uuid4().hex[:12],
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),

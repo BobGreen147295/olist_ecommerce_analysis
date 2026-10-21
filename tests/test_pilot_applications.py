@@ -34,6 +34,28 @@ def main() -> None:
         applications = list_pilot_applications()
         assert len(applications) == 1
         assert applications[0]["shop_domain"] == "pilot-store.myshopify.com"
+
+        from unittest.mock import patch
+        from src.agent.auth_session_store import issue_session
+
+        with patch.dict(os.environ, {"SESSION_SIGNING_KEY": "synthetic-pilot-test-signing-key-at-least-32-characters"}):
+            merchant_token = issue_session("synthetic-merchant", "merchant")
+            denied = client.get("/v1/pilot-applications", headers={"Authorization": f"Bearer {merchant_token}"})
+            assert denied.status_code == 403
+            assert "applications" not in denied.get_json()
+            assert "merchant@example.com" not in denied.get_data(as_text=True)
+
+            admin_token = issue_session("synthetic-admin", "admin")
+            admin_headers = {"Authorization": f"Bearer {admin_token}"}
+            allowed = client.get("/v1/pilot-applications", headers=admin_headers)
+            assert allowed.status_code == 200
+            assert len(allowed.get_json()["applications"]) == 1
+            assert allowed.get_json()["applications"][0]["application_id"] == valid.get_json()["application_id"]
+
+            assert client.post("/v1/auth/logout", headers=admin_headers).status_code == 204
+            revoked = client.get("/v1/pilot-applications", headers=admin_headers)
+            assert revoked.status_code == 401
+            assert "applications" not in revoked.get_json()
     print("Pilot application tests passed")
 
 

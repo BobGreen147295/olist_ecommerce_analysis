@@ -28,7 +28,8 @@ test('public pilot, sample report and privacy omit demo identity; admin stays pr
     });
     const output = pageModule.exports.renderShell({ children: 'Public content' });
     if (pathname === '/pilot/applications') {
-      assert.match(JSON.stringify(output), /Northstar Commerce/);
+      assert.doesNotMatch(JSON.stringify(output), /Northstar|Nora Kim/);
+      assert.ok(nodes(output).some((node) => node.props.href === '/data'));
     } else {
       assert.doesNotMatch(JSON.stringify(output), /Northstar|Nora Kim|workspace-switcher|copilot-panel/);
       assert.ok(nodes(output).some((node) => node.props.href === '/pilot#apply'));

@@ -1,5 +1,6 @@
 """Regression checks for acceptance gaps using synthetic data and temporary storage."""
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import tempfile
@@ -80,6 +81,9 @@ class EvaluationFixTests(unittest.TestCase):
                                source_diagnosis={"source": "consented_reactivation_aggregate"}, owner="synthetic-eval")
             prepare_manual_execution(task["task_id"], channel="email", budget=200, market="US",
                                      locale="en-US", attribution_window_days=7, owner="synthetic-eval")
+            from src.agent.task_store import mark_manual_execution_started
+            with patch("src.agent.task_store._now", return_value="2026-01-01T00:00:00+00:00"):
+                mark_manual_execution_started(task["task_id"], owner="synthetic-eval")
             client = app.test_client()
             for changes in ({"treatment_users": 100.5}, {"control_orders": 1.5}, {"cost": float("nan")}, {"treatment_revenue": None}):
                 response = client.post(f"/v1/tasks/{task['task_id']}/observed-result", json={**BASE, **changes})
@@ -92,6 +96,7 @@ class EvaluationFixTests(unittest.TestCase):
     def test_draft_persists_snapshot_and_blocked_input_cannot_create_task(self):
         summary = {**synthetic_summary(), "currency_code": "USD"}
         with tempfile.TemporaryDirectory() as directory, \
+             patch("api.app._shopify_now", return_value=datetime(2026, 9, 15, 12, tzinfo=timezone.utc)), \
              patch("src.agent.task_store.TASKS_PATH", Path(directory) / "tasks.json"), \
              patch("src.agent.task_store._use_database", return_value=False), \
              patch("api.app._require_session", return_value={"username": "synthetic-eval"}), \

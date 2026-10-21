@@ -87,3 +87,12 @@ test('method-only answer is labelled knowledge, not proof of a model call', asyn
   assert.equal(state.mode, 'knowledge');
   assert.equal(state.loading, false);
 });
+
+test('deterministic report is labelled data, including a failed data lookup, never live AI', async () => {
+  for (const error of [null, 'order_trend_unavailable']) {
+    const { state, send } = setup({ payload: { answer: '数据核对 · 未调用模型', mode: 'data', error } });
+    await send({ preventDefault() {} });
+    assert.equal(state.mode, 'data');
+    assert.equal(state.loading, false);
+  }
+});

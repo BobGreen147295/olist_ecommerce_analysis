@@ -1,4 +1,6 @@
 import sys
+from datetime import datetime, timezone
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,7 +10,8 @@ from api.app import _shopify_signal_draft, _shopify_store_opportunities
 from scripts.evaluate_product import synthetic_summary
 
 
-def main() -> None:
+@patch("api.app._shopify_now", return_value=datetime(2026, 9, 15, 12, tzinfo=timezone.utc))
+def main(_clock=None) -> None:
     trend = synthetic_summary()["order_trend"]
     signals = _shopify_store_opportunities({"order_trend": trend})
     assert {signal["id"] for signal in signals} == {"net_sales_decline", "refund_pressure"}

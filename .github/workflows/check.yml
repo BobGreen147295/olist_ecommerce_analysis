@@ -1,0 +1,33 @@
+name: Product checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  product:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Install Python dependencies
+        run: python3 -m pip install -r requirements.txt
+      - name: Backend regression (synthetic accounts and local services)
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: Frontend regression
+        working-directory: web
+        run: node --test tests/*.test.mjs
+      - name: Lint
+        working-directory: web
+        run: npm run lint
+      - name: Production build
+        working-directory: web
+        run: npm run build

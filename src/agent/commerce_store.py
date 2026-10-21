@@ -13,6 +13,7 @@ import hmac
 import os
 import re
 import uuid
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Any
@@ -241,7 +242,7 @@ def _normalize_orders(
     default_timezone = _normalize_timezone(defaults.get("timezone", "UTC"))
     output = pd.DataFrame(index=frame.index)
     output["order_id"] = _column_text(frame, mapping["order_id"])
-    output["ordered_at"] = pd.to_datetime(frame[mapping["ordered_at"]], errors="coerce", utc=True)
+    output["ordered_at"] = pd.to_datetime(frame[mapping["ordered_at"]], format="mixed", errors="coerce", utc=True)
     amount_text = _column_text(frame, mapping["total_amount"]).str.replace(r"[^0-9.\-]", "", regex=True)
     output["total_amount"] = pd.to_numeric(amount_text, errors="coerce")
     output["customer_id"] = _column_text(frame, mapping.get("customer_id"))
@@ -412,37 +413,36 @@ def get_connected_sales_trend(months: int = 6, owner: str | None = None) -> dict
     months = int(months)
     if not 1 <= months <= 36:
         return {"success": False, "data": None, "summary": "months 必须是 1 到 36 之间的整数", "source": source["display_name"]}
-    health = get_connected_data_health(owner)
-    currencies = health["currencies"] if health else []
-    if len(currencies) != 1:
-        return {
-            "success": False,
-            "data": None,
-            "source": source["display_name"],
-            "summary": "当前数据源包含多币种订单，系统不会把不同币种直接相加为 GMV。请按市场/币种拆分导入，或后续配置明确的 FX 报表口径。",
-            "currencies": currencies,
-        }
     conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
         cursor.execute(
-            f"SELECT order_id, ordered_at, total_amount FROM commerce_orders WHERE source_id = {placeholder}",
+            f"SELECT order_id, ordered_at, total_amount, currency FROM commerce_orders WHERE source_id = {placeholder}",
             (source["source_id"],),
         )
         rows = cursor.fetchall()
         cursor.close()
     finally:
         conn.close()
-    frame = pd.DataFrame(rows, columns=["order_id", "ordered_at", "total_amount"])
+    metadata = {key: source.get(key) for key in ("source_id", "source_type", "created_at", "coverage_start", "coverage_end", "record_count")}
+    frame = pd.DataFrame(rows, columns=["order_id", "ordered_at", "total_amount", "currency"])
     if frame.empty:
-        return {"success": False, "data": None, "summary": "已连接数据源没有可用订单", "source": source["display_name"]}
+        return {"success": False, "data": None, "error_code": "empty_source", "summary": "已连接数据源没有可用订单", "source": source["display_name"]}
+    currencies = sorted(frame["currency"].dropna().unique().tolist())
+    if len(currencies) != 1 or frame["currency"].isna().any():
+        return {"success": False, "data": None, "error_code": "mixed_currency", "source": source["display_name"],
+                "summary": "币种不唯一或缺失，不能合计订单金额；请按币种拆分导入。", "currencies": currencies}
     frame["ordered_at"] = pd.to_datetime(frame["ordered_at"], errors="coerce", utc=True)
     frame["total_amount"] = pd.to_numeric(frame["total_amount"], errors="coerce")
-    frame = frame.dropna(subset=["ordered_at", "total_amount"])
+    if (frame["ordered_at"].isna().any() or frame["total_amount"].isna().any()
+            or not frame["total_amount"].map(lambda value: Decimal(str(value)).is_finite() and value >= 0).all()):
+        return {"success": False, "data": None, "error_code": "invalid_source_rows", "source": source["display_name"],
+                "summary": "订单日期或金额无效，未跳过异常行生成合计；请核对后重新导入。"}
     frame["period"] = frame["ordered_at"].dt.strftime("%Y-%m")
     monthly = (
         frame.groupby("period", as_index=False)
-        .agg(total_orders=("order_id", "nunique"), total_sales=("total_amount", "sum"))
+        .agg(total_orders=("order_id", "nunique"),
+             total_sales=("total_amount", lambda values: float(sum((Decimal(str(value)) for value in values), Decimal(0)))))
         .sort_values("period")
         .tail(months)
     )
@@ -455,7 +455,8 @@ def get_connected_sales_trend(months: int = 6, owner: str | None = None) -> dict
         f"已连接数据源「{source['display_name']}」近 {len(data)} 个月销售趋势；"
         f"最新月 {latest['period']} 销售额 {currency} {latest['total_sales']:,.2f}，订单 {latest['total_orders']} 笔"
     )
-    return {"success": True, "data": data, "summary": summary, "source": source["display_name"], "currency": currency}
+    return {"success": True, "data": data, "summary": summary, "source": source["display_name"],
+            "currency": currency, "source_metadata": metadata}
 
 
 def get_reactivation_signal(owner: str, inactive_days: int = 90) -> dict[str, Any] | None:
@@ -478,11 +479,11 @@ def get_reactivation_signal(owner: str, inactive_days: int = 90) -> dict[str, An
             (source["source_id"],),
         )
         imported_orders, identified_orders, consented_orders = cursor.fetchone()
-        cursor.execute(f"SELECT customer_id, ordered_at, total_amount FROM commerce_orders WHERE source_id = {placeholder} AND customer_id IS NOT NULL AND marketing_consent = 'granted'", (source["source_id"],))
+        cursor.execute(f"SELECT customer_id, ordered_at, total_amount, marketing_consent FROM commerce_orders WHERE source_id = {placeholder} AND customer_id IS NOT NULL", (source["source_id"],))
         rows = cursor.fetchall(); cursor.close()
     finally:
         conn.close()
-    frame = pd.DataFrame(rows, columns=["customer_id", "ordered_at", "total_amount"])
+    frame = pd.DataFrame(rows, columns=["customer_id", "ordered_at", "total_amount", "marketing_consent"])
     coverage = {
         "imported_orders": int(imported_orders or 0),
         "identified_orders": int(identified_orders or 0),
@@ -497,8 +498,18 @@ def get_reactivation_signal(owner: str, inactive_days: int = 90) -> dict[str, An
     frame["ordered_at"] = pd.to_datetime(frame["ordered_at"], errors="coerce", utc=True)
     frame["total_amount"] = pd.to_numeric(frame["total_amount"], errors="coerce")
     frame = frame.dropna()
+    reference = pd.Timestamp(_now())
+    if frame.empty or (frame["ordered_at"] > reference).any():
+        return {"state": "not_ready", "message": "订单日期缺失或晚于当前时间，请核对导出范围后重新导入；不生成召回机会。", "coverage": coverage}
+    # Imported consent is not a live subscription registry. Never reuse an older
+    # grant when a later record is denied/unknown; conflicting latest rows fail closed.
+    latest_time = frame.groupby("customer_id")["ordered_at"].transform("max")
+    blocked = frame.loc[frame["ordered_at"].eq(latest_time) & frame["marketing_consent"].ne("granted"), "customer_id"]
     by_customer = frame.groupby("customer_id").agg(last_order=("ordered_at", "max"), lifetime_sales=("total_amount", "sum"))
-    cutoff = frame["ordered_at"].max() - pd.Timedelta(days=inactive_days)
+    by_customer = by_customer.loc[~by_customer.index.isin(blocked)]
+    if by_customer.empty:
+        return {"state": "not_ready", "message": "当前导入中没有最新记录明确授予营销同意的客户，不能创建召回试点；执行前仍需核对渠道当前同意状态。", "coverage": coverage}
+    cutoff = reference - pd.Timedelta(days=inactive_days)
     high_value = by_customer["lifetime_sales"] >= by_customer["lifetime_sales"].quantile(.75)
     eligible = by_customer[high_value & (by_customer["last_order"] <= cutoff)]
-    return {"state": "ready", "inactive_days": inactive_days, "eligible_customers": int(len(eligible)), "eligible_historical_sales": round(float(eligible["lifetime_sales"].sum()), 2), "currency": currencies[0], "cutoff_date": cutoff.strftime("%Y-%m-%d"), "message": "仅为需人工审核的聚合机会信号；未创建名单或客户触达。", "coverage": coverage}
+    return {"state": "ready", "inactive_days": inactive_days, "eligible_customers": int(len(eligible)), "eligible_historical_sales": round(float(eligible["lifetime_sales"].sum()), 2), "currency": currencies[0], "cutoff_date": cutoff.strftime("%Y-%m-%d"), "reference_at": reference.isoformat(), "message": "仅为需人工审核的聚合候选信号；默认沉默阈值不代表实际购买周期。需另行确认历史覆盖范围及执行时的最新营销同意；未创建名单或客户触达。", "coverage": coverage}

@@ -10,9 +10,11 @@ const messages = {
   "zh-CN": {
     skip: "跳到主要内容", closeNav: "关闭导航", openNav: "打开导航", workspace: "工作区",
     overview: "总览", opportunities: "机会", campaigns: "活动", learning: "实验复盘", data: "数据连接",
+    reviews: "经营复盘", reviewsMeta: "证据与下一步",
     overviewMeta: "Overview", opportunitiesMeta: "Opportunities", campaignsMeta: "Campaigns", learningMeta: "Learning", dataMeta: "Data",
     copilotTitle: "AI Co-pilot", copilotBody: "基于证据生成建议，执行始终由你确认。", copilotCta: "开始智能问答",
     growthLead: "增长负责人", accountOptions: "账户选项", online: "服务在线", openCopilot: "打开 AI 智能问答",
+    workspaceIdentity: "收入工作台", accountIdentity: "账户与数据", manageConnection: "管理连接与登录",
     createCampaign: "新建活动", language: "界面语言", chinese: "中文", english: "English",
     overviewKicker: "收入情报", overviewTitle1: "今天，先做", overviewTitle2: "这件事。",
     overviewSummary: "从 Shopify 聚合数据中识别优先级，生成可审批的实验方案，并跟踪真实增量。",
@@ -38,9 +40,11 @@ const messages = {
   en: {
     skip: "Skip to main content", closeNav: "Close navigation", openNav: "Open navigation", workspace: "Workspace",
     overview: "Overview", opportunities: "Opportunities", campaigns: "Campaigns", learning: "Learning", data: "Data connections",
+    reviews: "Operating reviews", reviewsMeta: "Evidence and next checks",
     overviewMeta: "Revenue overview", opportunitiesMeta: "Prioritized actions", campaignsMeta: "Campaign workspace", learningMeta: "Experiment results", dataMeta: "Authorized sources",
     copilotTitle: "AI Co-pilot", copilotBody: "Evidence-backed guidance. You approve every action.", copilotCta: "Ask the co-pilot",
     growthLead: "Growth lead", accountOptions: "Account options", online: "Service online", openCopilot: "Open AI co-pilot",
+    workspaceIdentity: "Revenue workspace", accountIdentity: "Account & data", manageConnection: "Connections & sign-in",
     createCampaign: "Create campaign", language: "Interface language", chinese: "中文", english: "English",
     overviewKicker: "Revenue intelligence", overviewTitle1: "Start today with", overviewTitle2: "the highest-impact action.",
     overviewSummary: "Prioritize opportunities from aggregated Shopify data, build approval-ready experiments, and track verified incremental impact.",
