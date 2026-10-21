@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from copy import deepcopy
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -72,6 +72,7 @@ def synthetic_summary() -> dict:
         days.append(dict(date=(date(2026, 9, 1) + timedelta(days=i)).isoformat(),
                          orders=2, gross_sales=120, net_sales=net, refunds=120-net))
     return {"is_development_store": False, "order_trend": {
+        "synced_at": "2026-09-15T00:00:00+00:00",
         "window_days": 30, "orders_scanned": 28, "truncated": False, "days": days,
         "totals": {"orders": 28, "gross_sales": 1680, "net_sales": 1120, "refunds": 560}}}
 
@@ -99,7 +100,8 @@ def check_signal_evidence(signals: list, expected: dict) -> None:
         equal_metrics(signal.get("evidence", {}), expected[signal["id"]])
 
 
-def run_evaluation() -> list[dict]:
+@patch("api.app._shopify_now", return_value=datetime(2026, 9, 15, 12, tzinfo=timezone.utc))
+def run_evaluation(_clock=None) -> list[dict]:
     # Import only deterministic paths. No account, stored data, or model is loaded.
     from api.app import app, _shopify_opportunity_readiness, _shopify_store_opportunities
     from src.agent.evaluation import evaluate_experiment

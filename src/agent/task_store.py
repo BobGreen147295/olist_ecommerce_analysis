@@ -7,10 +7,11 @@ PostgreSQL，适合 Streamlit Cloud 等多用户部署。页面和 Agent 不直�
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -133,11 +134,27 @@ def _db_load_tasks() -> list[dict[str, Any]]:
         conn.close()
 
 
-def _db_save_task(task: dict[str, Any]) -> None:
+def _db_save_task(task: dict[str, Any], expected_payload: Optional[str] = None) -> None:
     conn, placeholder = _connect_database()
     try:
         cursor = conn.cursor()
-        if placeholder == "%s":
+        if expected_payload is not None:
+            cursor.execute(f"SELECT payload FROM operation_tasks WHERE task_id = {placeholder}", (task["task_id"],))
+            row = cursor.fetchone()
+            # Legacy whitespace/key order/Unicode escaping are not state changes.
+            # Compare decoded snapshots, then CAS the exact stored bytes so a
+            # writer arriving between this SELECT and UPDATE still conflicts.
+            canonical = lambda value: json.dumps(json.loads(value), ensure_ascii=False, sort_keys=True)
+            if row is None or canonical(row[0]) != canonical(expected_payload):
+                raise ValueError("任务已被其他操作更新，请刷新核对后再继续")
+            cursor.execute(
+                f"UPDATE operation_tasks SET status = {placeholder}, updated_at = {placeholder}, payload = {placeholder} "
+                f"WHERE task_id = {placeholder} AND payload = {placeholder}",
+                (task["status"], task["updated_at"], json.dumps(task, ensure_ascii=False), task["task_id"], row[0]),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("任务已被其他操作更新，请刷新核对后再继续")
+        elif placeholder == "%s":
             cursor.execute(
                 """
                 INSERT INTO operation_tasks (task_id, status, created_at, updated_at, payload)
@@ -238,6 +255,9 @@ def update_task(
             continue
         if owner is not None and task.get("owner") != owner:
             continue
+        if task.get("execution", {}).get("mode") == "manual_handoff" and task["execution"].get("started_at"):
+            raise ValueError("已启动的手工实验不能修改参数或状态")
+        previous_payload = json.dumps(task, ensure_ascii=False)
         for field, value in updates.items():
             if field in EDITABLE_FIELDS:
                 task[field] = value
@@ -245,7 +265,7 @@ def update_task(
             task["status"] = updates["status"]
         task["updated_at"] = _now()
         if path is None and _use_database():
-            _db_save_task(task)
+            _db_save_task(task, previous_payload)
         else:
             save_tasks(tasks, path)
         return task
@@ -280,14 +300,14 @@ def prepare_manual_execution(
     locale = str(locale).strip()
     if channel not in {"email", "sms", "whatsapp", "manual"}:
         raise ValueError("执行渠道必须是 email、sms、whatsapp 或 manual")
-    if float(budget) < 0:
-        raise ValueError("活动预算不能小于 0")
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)) or not math.isfinite(budget) or budget < 0:
+        raise ValueError("活动预算必须是有限的非负数字")
     if not market or len(market) > 16:
         raise ValueError("市场代码不能为空且最多 16 个字符")
     if not locale or len(locale) > 32:
         raise ValueError("语言代码不能为空且最多 32 个字符")
-    if not 1 <= int(attribution_window_days) <= 90:
-        raise ValueError("归因窗口必须是 1 到 90 天")
+    if isinstance(attribution_window_days, bool) or not isinstance(attribution_window_days, int) or not 1 <= attribution_window_days <= 90:
+        raise ValueError("归因窗口必须是 1 到 90 的整数天数")
 
     tasks = load_tasks(path)
     for task in tasks:
@@ -297,6 +317,9 @@ def prepare_manual_execution(
             raise ValueError("只有已通过营销同意门禁的再激活机会可以生成执行包")
         if task.get("status") not in {"draft", "confirmed"}:
             raise ValueError("只有草案或已确认任务可以生成执行包")
+        if task.get("execution", {}).get("started_at") or task.get("execution", {}).get("status") == "in_progress":
+            raise ValueError("已启动的实验不能重新确认参数或重置观察窗口")
+        previous_payload = json.dumps(task, ensure_ascii=False)
         now = _now()
         task.update({
             "status": "confirmed",
@@ -314,7 +337,7 @@ def prepare_manual_execution(
             },
         })
         if path is None and _use_database():
-            _db_save_task(task)
+            _db_save_task(task, previous_payload)
         else:
             save_tasks(tasks, path)
         return task
@@ -351,6 +374,18 @@ def get_manual_execution_package(
     }
 
 
+def _observation_end(task: dict[str, Any]) -> datetime:
+    """Derive the deadline from saved approval/start, never from submitted dates."""
+    try:
+        started = datetime.fromisoformat(task["execution"]["started_at"].replace("Z", "+00:00"))
+        days = task["attribution_window_days"]
+        if started.tzinfo is None or isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= 90:
+            raise ValueError()
+        return started + timedelta(days=days)
+    except (KeyError, TypeError, AttributeError, ValueError, OverflowError):
+        raise ValueError("启动记录或观察窗口无效，不能回传真实结果") from None
+
+
 def mark_manual_execution_started(
     task_id: str,
     *,
@@ -367,13 +402,18 @@ def mark_manual_execution_started(
             raise ValueError("请先人工确认活动参数并生成手工执行包")
         if execution.get("status") == "result_recorded":
             raise ValueError("该任务已经完成结果回传")
+        if execution.get("status") == "in_progress":
+            _observation_end(task)
+            return task
+        previous_payload = json.dumps(task, ensure_ascii=False)
         now = _now()
         execution["status"] = "in_progress"
         execution["started_at"] = now
         task["execution"] = execution
+        execution["observation_ends_at"] = _observation_end(task).isoformat(timespec="seconds")
         task["updated_at"] = now
         if path is None and _use_database():
-            _db_save_task(task)
+            _db_save_task(task, previous_payload)
         else:
             save_tasks(tasks, path)
         return task
@@ -405,6 +445,12 @@ def record_observed_result(
         execution = task.get("execution") if isinstance(task.get("execution"), dict) else {}
         if task.get("status") != "confirmed" or execution.get("mode") != "manual_handoff":
             raise ValueError("只有已确认的手工执行包可以回传真实结果")
+        if execution.get("status") != "in_progress" or not execution.get("started_at"):
+            raise ValueError("请先记录商家确认的人工启动，再等待观察窗口结束")
+        end = _observation_end(task)
+        if datetime.fromisoformat(_now()) < end:
+            raise ValueError(f"观察窗口尚未结束，请在 {end.isoformat(timespec='seconds')} 后回传")
+        previous_payload = json.dumps(task, ensure_ascii=False)
         result = evaluate_experiment(
             treatment_users=treatment_users,
             treatment_orders=treatment_orders,
@@ -421,6 +467,8 @@ def record_observed_result(
         result.update({
             "source": "merchant_reported_aggregate",
             "verification": "self_reported",
+            "observation_started_at": execution["started_at"],
+            "observation_ends_at": end.isoformat(timespec="seconds"),
         })
         task["result"] = result
         task["status"] = "completed"
@@ -429,7 +477,37 @@ def record_observed_result(
         execution["result_recorded_at"] = task["updated_at"]
         task["execution"] = execution
         if path is None and _use_database():
-            _db_save_task(task)
+            _db_save_task(task, previous_payload)
+        else:
+            save_tasks(tasks, path)
+        return task
+    return None
+
+
+def record_diagnostic_review(
+    task_id: str, decision: str, *, path: Optional[Path] = None, owner: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Record structured feedback on store aggregates, not marketing execution."""
+    choices = {"accepted": ("confirmed", "verify_business_cause"),
+               "needs_information": ("draft", "clarify_definition"),
+               "rejected": ("rejected", "stop_diagnosis")}
+    if decision not in choices:
+        raise ValueError("请选择认可、补充信息或停止诊断")
+    tasks = load_tasks(path)
+    for task in tasks:
+        if task.get("task_id") != task_id or (owner is not None and task.get("owner") != owner):
+            continue
+        if task.get("source_diagnosis", {}).get("source") != "shopify_aggregate" or task.get("execution"):
+            raise ValueError("只有店铺级汇总诊断可以记录此反馈，不会启动客户活动")
+        previous_payload = json.dumps(task, ensure_ascii=False)
+        status, action = choices[decision]
+        review = {"decision": decision, "reviewed_at": _now(), "next_action": action}
+        task["diagnostic_review"] = review
+        task.setdefault("diagnostic_reviews", []).append(review)
+        task["status"] = status
+        task["updated_at"] = review["reviewed_at"]
+        if path is None and _use_database():
+            _db_save_task(task, previous_payload)
         else:
             save_tasks(tasks, path)
         return task
@@ -451,6 +529,8 @@ def complete_task(
             continue
         if task.get("status") != "confirmed":
             raise ValueError("只有 confirmed 状态的任务可以回填结果")
+        if task.get("execution", {}).get("mode") == "manual_handoff":
+            raise ValueError("手工实验必须通过观察期门禁回传结果")
         task["result"] = result
         task["status"] = "completed"
         task["updated_at"] = _now()

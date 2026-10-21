@@ -26,29 +26,26 @@ function deltaLabel(value: number | undefined, fallback: string, english: boolea
 
 export default function OverviewPage() {
   const { locale, t } = useI18n();
-  const [shopify, setShopify] = useState<ShopifyConnection | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const cached = JSON.parse(localStorage.getItem(SHOPIFY_SUMMARY_CACHE_KEY) ?? "null");
-      return cached?.connection?.summary && Date.now() - cached.cached_at < 86_400_000 ? cached.connection : null;
-    } catch { return null; }
-  });
+  const [shopify, setShopify] = useState<ShopifyConnection | null>(null);
   useEffect(() => {
+    // Remove the old, browser-wide cache. Never render another account's data.
+    try { localStorage.removeItem(SHOPIFY_SUMMARY_CACHE_KEY); } catch { /* No cache is read. */ }
     const token = sessionStorage.getItem("revenueops_access_token");
     if (!token || !API_BASE_URL) return;
+    let active = true;
     fetch(`${API_BASE_URL}/v1/integrations/shopify/status`, { headers: { Authorization: `Bearer ${token}` } })
       .then((response) => {
+        if (!active || sessionStorage.getItem("revenueops_access_token") !== token) return null;
         if (response.status === 401) sessionStorage.removeItem("revenueops_access_token");
         return response.ok ? response.json() : null;
       })
       .then((data) => {
+        if (!active || sessionStorage.getItem("revenueops_access_token") !== token) return;
         const connection = data?.connection;
-        if (connection?.summary) {
-          setShopify(connection);
-          localStorage.setItem(SHOPIFY_SUMMARY_CACHE_KEY, JSON.stringify({ connection, cached_at: Date.now() }));
-        }
+        setShopify(connection?.summary ? connection : null);
       })
       .catch(() => undefined);
+    return () => { active = false; };
   }, []);
   const summary = shopify?.summary;
   const deltas = shopify?.comparison?.deltas;

@@ -17,7 +17,7 @@ def query_sales_trend(months: int = 6, *, owner: str | None = None) -> dict:
     try:
         result = get_connected_sales_trend(months, owner=owner)
     except RuntimeError:
-        result = None
+        return {"success": False, "data": None, "error_code": "data_service_unavailable", "summary": "订单数据服务暂不可用"}
     if result is not None:
         return result
     return {
@@ -25,6 +25,7 @@ def query_sales_trend(months: int = 6, *, owner: str | None = None) -> dict:
         "data": None,
         "summary": "尚无可用的已连接订单趋势，请先完成 Shopify 同步或导入脱敏订单。",
         "source": "none",
+        "error_code": "source_required",
     }
 
 

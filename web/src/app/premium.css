@@ -530,14 +530,38 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .workflow-step-active::before { background: var(--brand) !important; border-color: var(--brand) !important; box-shadow: 0 0 0 5px rgba(101,230,189,.08); }
 .connector-modal-backdrop, .copilot-scrim.copilot-visible { background: rgba(0,0,0,.68); backdrop-filter: blur(8px); }
 .connector-modal, .copilot-panel { color: var(--ink); background: #0d1315; border-color: var(--line); }
+.copilot-panel { width: min(420px, 100%); overflow-y: auto; }
 .connector-modal-note, .copilot-context { color: #9cb0aa; background: rgba(101,230,189,.05); border-color: rgba(101,230,189,.12); }
 .scope-grid > div, .scope-grid > label { background: rgba(255,255,255,.018); border-color: var(--line); }
 .scope-grid span { color: #74817c; }
 .copilot-header { border-color: var(--line); }
 .copilot-header span, .copilot-disclaimer { color: #82908b; }
-.copilot-message p { color: #c7d1cd; background: #171f21; }
+.copilot-message p { color: #c7d1cd; background: #171f21; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.copilot-messages { min-height: 0; }
+.order-comparison { min-width: 0; flex: 1; padding: 16px; color: var(--ink); background: var(--surface-raised); border: 1px solid var(--line); border-radius: 8px; font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.order-comparison header, .order-comparison-delta { display: grid; gap: 4px; }
+.order-comparison header small, .order-comparison-source, .order-comparison-delta > span { color: var(--muted); }
+.order-comparison-source { margin-top: 12px; }
+.order-comparison-delta { margin: 16px 0; }
+.order-comparison-delta strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.order-comparison table { width: 100%; margin: 12px 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.order-comparison caption { text-align: left; color: var(--muted); font-size: 12px; }
+.order-comparison th, .order-comparison td { padding: 8px 2px; border-bottom: 1px solid var(--line); text-align: right; }
+.order-comparison th:first-child { text-align: left; }
+.order-comparison-issues { padding-left: 18px; color: var(--warning); }
+.order-comparison-issues li + li { margin-top: 8px; }
+.order-comparison p.order-comparison-boundary, .order-comparison details p { margin: 12px 0; padding: 0; background: transparent; color: var(--muted); }
+.order-comparison summary { display: list-item; min-height: 44px; padding: 10px 0; color: var(--brand); cursor: pointer; }
+.order-comparison summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.order-comparison dl { margin: 0; }
+.order-comparison dl > div { margin-bottom: 12px; }
+.order-comparison dt { color: var(--muted); font-size: 12px; }
+.order-comparison dd { margin: 0; font-variant-numeric: tabular-nums; }
+.order-comparison > a { display: inline-flex; align-items: center; min-height: 44px; color: var(--brand); }
+@media (max-height: 480px) { .copilot-messages { min-height: 120px; } }
 .copilot-message.user p { color: #d9ece6; background: rgba(101,230,189,.09); }
-.copilot-prompts button { min-height: 38px; color: var(--brand); background: transparent; border-color: var(--line); }
+.copilot-prompts button { min-height: 44px; color: var(--brand); background: transparent; border-color: var(--line); }
+.copilot-prompts button:disabled { opacity: .5; cursor: wait; }
 .copilot-compose:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(101,230,189,.1); }
 .copilot-compose button { min-width: 70px; min-height: 36px; color: var(--brand-ink); background: var(--brand); }
 

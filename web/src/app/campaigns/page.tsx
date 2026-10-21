@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { PageHeading, StatusBadge } from "@/components/Ui";
 import { useI18n } from "@/components/I18n";
 import { campaigns } from "@/lib/demo-data";
+import { TaskPicker } from "@/components/TaskPicker";
+import { selectTask, taskHref } from "@/lib/task-workflow";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
 type RealTask = {
@@ -33,63 +35,100 @@ export default function CampaignsPage() {
   const [realState, setRealState] = useState<"loading" | "signed-out" | "empty" | "ready">("loading");
   const [realMessage, setRealMessage] = useState("");
   const [form, setForm] = useState({ channel: "email", budget: "25", market: "US", locale: "en-US", attribution_window_days: "14" });
+  const [tasks, setTasks] = useState<RealTask[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  function chooseTask(task: RealTask | null) {
+    setRealTask(task); setRealMessage("");
+    setForm({ channel: task?.channel && task.channel !== "待人工确认" ? task.channel : "email",
+      budget: String(task?.budget ?? 25), market: task?.market ?? "US", locale: task?.locale ?? "en-US",
+      attribution_window_days: String(task?.attribution_window_days ?? 14) });
+  }
 
   useEffect(() => {
     const token = sessionStorage.getItem("revenueops_access_token");
+    let active = true;
+    const currentSession = () => active && sessionStorage.getItem("revenueops_access_token") === token;
     if (!token || !API_BASE_URL) { Promise.resolve().then(() => setRealState("signed-out")); return; }
     fetch(`${API_BASE_URL}/v1/tasks`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (response) => response.ok ? response.json() : Promise.reject())
-      .then((data) => {
-        const task = (Array.isArray(data.tasks) ? data.tasks : []).find((item: RealTask) => item.source_diagnosis?.source === "consented_reactivation_aggregate") ?? null;
-        setRealTask(task);
-        setRealState(task ? "ready" : "empty");
-        if (task) setForm({
-          channel: task.channel && task.channel !== "待人工确认" ? task.channel : "email",
-          budget: String(task.budget ?? 25), market: task.market ?? "US", locale: task.locale ?? "en-US",
-          attribution_window_days: String(task.attribution_window_days ?? 14),
-        });
+      .then(async response => {
+        if (!currentSession()) return null;
+        if (response.status === 401) { setRealTask(null); setTasks([]); setRealState("signed-out"); return null; }
+        return response.ok ? response.json() : Promise.reject();
       })
-      .catch(() => { setRealState("empty"); setRealMessage(tx("暂时无法读取真实活动草案，请稍后重试。", "Unable to load the real campaign draft. Try again later.")); });
+      .then((data) => {
+        if (!data || !currentSession()) return;
+        const available = (Array.isArray(data.tasks) ? data.tasks : []).filter((item: RealTask) => item.source_diagnosis?.source === "consented_reactivation_aggregate" && item.status !== "rejected");
+        setTasks(available); setRealState(available.length ? "ready" : "empty");
+        const requested = new URLSearchParams(window.location.search).get("task") ?? "";
+        const task = selectTask<RealTask>(available, requested);
+        setRealTask(task);
+        if (!task && requested) setRealMessage(tx("该任务不属于当前可执行列表，请核对账户或重新选择。", "That task is not available to this account. Check the account or choose another task."));
+        if (task) setForm({channel: task.channel && task.channel !== "待人工确认" ? task.channel : "email", budget: String(task.budget ?? 25), market: task.market ?? "US", locale: task.locale ?? "en-US", attribution_window_days: String(task.attribution_window_days ?? 14)});
+      })
+      .catch(() => { if (currentSession()) { setRealState("empty"); setRealMessage(tx("暂时无法读取真实活动草案，请稍后重试。", "Unable to load the real campaign draft. Try again later.")); } });
+    return () => { active = false; };
   }, [tx]);
 
   async function confirmRealTask() {
-    if (!realTask || !API_BASE_URL) return;
+    if (!realTask || !API_BASE_URL || busy) return;
     const token = sessionStorage.getItem("revenueops_access_token");
     if (!token) { setRealState("signed-out"); return; }
+    setBusy(true);
+    try {
     setRealMessage(tx("正在确认执行参数…", "Confirming execution parameters…"));
     const response = await fetch(`${API_BASE_URL}/v1/tasks/${realTask.task_id}/confirm`, {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ ...form, budget: Number(form.budget), attribution_window_days: Number(form.attribution_window_days) }),
     });
     const data = await response.json().catch(() => ({}));
+    if (sessionStorage.getItem("revenueops_access_token") !== token) return;
+    if (response.status === 401) { setRealState("signed-out"); setRealTask(null); setTasks([]); return; }
     if (!response.ok) { setRealMessage(english ? "Unable to confirm campaign parameters. Try again later." : (data.error ?? "无法确认活动参数，请稍后重试。")); return; }
     setRealTask(data.task);
+    setTasks(current => current.map(item => item.task_id === data.task.task_id ? data.task : item));
     setRealMessage(tx("已人工确认。执行包只包含活动规则，不包含客户邮箱、电话或名单。", "Human approval recorded. The execution package contains campaign rules only—no customer emails, phone numbers, or lists."));
+    } catch { if (sessionStorage.getItem("revenueops_access_token") === token) setRealMessage(tx("未能确认保存，请先刷新核对任务状态。", "Saving was not confirmed. Refresh to check the task status.")); }
+    finally { setBusy(false); }
   }
 
   async function downloadExecutionPackage() {
-    if (!realTask || !API_BASE_URL) return;
+    if (!realTask || !API_BASE_URL || busy) return;
     const token = sessionStorage.getItem("revenueops_access_token");
     if (!token) { setRealState("signed-out"); return; }
+    setBusy(true);
+    try {
     const response = await fetch(`${API_BASE_URL}/v1/tasks/${realTask.task_id}/execution-package.csv`, { headers: { Authorization: `Bearer ${token}` } });
+    if (sessionStorage.getItem("revenueops_access_token") !== token) return;
     if (!response.ok) { const data = await response.json().catch(() => ({})); setRealMessage(english ? "Execution package export failed." : (data.error ?? "执行包导出失败。")); return; }
-    const url = URL.createObjectURL(await response.blob());
+    const blob = await response.blob();
+    if (sessionStorage.getItem("revenueops_access_token") !== token) return;
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url; link.download = `revenueops-${realTask.task_id}-execution-package.csv`; link.click();
     URL.revokeObjectURL(url);
     setRealMessage(tx("执行包已下载。请在商家自己的渠道平台完成最终受众选择与发送。", "Execution package downloaded. Complete final audience selection and sending in the merchant's own channel platform."));
+    } catch { if (sessionStorage.getItem("revenueops_access_token") === token) setRealMessage(tx("下载失败，请稍后重试。", "Download failed. Try again later.")); }
+    finally { setBusy(false); }
   }
 
   async function startRealTask() {
-    if (!realTask || !API_BASE_URL) return;
+    if (!realTask || !API_BASE_URL || busy) return;
     const token = sessionStorage.getItem("revenueops_access_token");
     if (!token) { setRealState("signed-out"); return; }
+    setBusy(true);
+    try {
     setRealMessage(tx("正在记录人工启动…", "Recording the manual start…"));
     const response = await fetch(`${API_BASE_URL}/v1/tasks/${realTask.task_id}/start`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
     const data = await response.json().catch(() => ({}));
+    if (sessionStorage.getItem("revenueops_access_token") !== token) return;
+    if (response.status === 401) { setRealState("signed-out"); setRealTask(null); setTasks([]); return; }
     if (!response.ok) { setRealMessage(english ? "Unable to record the start. Try again later." : (data.error ?? "无法记录启动状态，请稍后重试。")); return; }
     setRealTask(data.task);
+    setTasks(current => current.map(item => item.task_id === data.task.task_id ? data.task : item));
     setRealMessage(tx("已标记为实验中。这里只记录商家确认的启动时间，不会调用外部渠道或发送消息。", "Marked as running. This records the merchant-confirmed start time only; no external channel is called and no message is sent."));
+    } catch { if (sessionStorage.getItem("revenueops_access_token") === token) setRealMessage(tx("未能确认启动记录，请先刷新核对任务状态。", "Start was not confirmed. Refresh to check the task status.")); }
+    finally { setBusy(false); }
   }
 
   return <main className="page-content">
@@ -100,18 +139,20 @@ export default function CampaignsPage() {
       {realState === "loading" && <div className="real-campaign-empty">{tx("正在读取真实活动草案…", "Loading the real campaign draft…")}</div>}
       {realState === "signed-out" && <div className="real-campaign-empty"><strong>{tx("需要登录当前试点账号", "Sign in to the current pilot account")}</strong><span>{tx("登录后才能读取该账号的真实机会草案。", "Sign in to read this account's real opportunity draft.")}</span><Link className="button button-ghost" href="/data">{tx("前往数据连接", "Go to data connections")}</Link></div>}
       {realState === "empty" && <div className="real-campaign-empty"><strong>{tx("还没有可执行的真实草案", "No executable real draft yet")}</strong><span>{realMessage || tx("先在机会页用已同意营销的匿名订单生成再激活草案。", "Create a reactivation draft from consented, anonymized orders on the opportunities page first.")}</span><Link className="button button-ghost" href="/opportunities">{tx("前往真实机会", "Go to real opportunities")}</Link></div>}
+      {realState === "ready" && <TaskPicker tasks={tasks} value={realTask?.task_id ?? ""} english={english} disabled={busy} onChange={id => { chooseTask(selectTask(tasks, id)); window.location.assign(id ? taskHref("/campaigns", id) : "/campaigns"); }} />}
+      {realState === "ready" && !realTask && <p role="status">{realMessage || tx("请选择要审核或查看的任务；不会默认打开另一项任务。", "Choose the task to review. No other task is selected implicitly.")}</p>}
       {realState === "ready" && realTask && <>
         <div className="real-campaign-summary"><div><span>{tx("机会", "Opportunity")}</span><strong>{realTask.title}</strong></div><div><span>{tx("匿名受众定义", "Anonymous audience definition")}</span><strong>{realTask.audience}</strong></div><div><span>{tx("衡量指标", "Success metric")}</span><strong>{realTask.expected_metric}</strong></div></div>
-        {realTask.status === "completed" ? <div className="real-campaign-empty"><strong>{tx("该执行包已完成结果回传", "Results have been submitted for this package")}</strong><span>{tx("真实归因结果已进入实验学习页。", "The real attribution result is available on the learning page.")}</span><Link className="button button-ghost" href="/learning">{tx("查看归因结果", "View attribution result")}</Link></div> : <>
-        <div className="form-grid real-campaign-form">
+        {realTask.status === "completed" ? <div className="real-campaign-empty"><strong>{tx("该执行包已完成结果回传", "Results have been submitted for this package")}</strong><span>{tx("真实归因结果已进入实验学习页。", "The real attribution result is available on the learning page.")}</span><Link className="button button-ghost" href={taskHref("/learning", realTask.task_id)}>{tx("查看归因结果", "View attribution result")}</Link></div> : <>
+        <fieldset className="form-grid real-campaign-form" disabled={busy || realTask.execution?.status === "in_progress"} style={{border:0,padding:0}}>
           <label>{tx("执行渠道", "Execution channel")}<select value={form.channel} onChange={(event) => setForm({ ...form, channel: event.target.value })}><option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option><option value="manual">{tx("手工执行", "Manual execution")}</option></select></label>
           <label>{tx("试点预算", "Pilot budget")}<input type="number" min="0" step="1" value={form.budget} onChange={(event) => setForm({ ...form, budget: event.target.value })} /></label>
           <label>{tx("市场代码", "Market code")}<input maxLength={16} value={form.market} onChange={(event) => setForm({ ...form, market: event.target.value.toUpperCase() })} /></label>
           <label>{tx("语言代码", "Locale code")}<input maxLength={32} value={form.locale} onChange={(event) => setForm({ ...form, locale: event.target.value })} /></label>
           <label>{tx("归因窗口（天）", "Attribution window (days)")}<input type="number" min="1" max="90" value={form.attribution_window_days} onChange={(event) => setForm({ ...form, attribution_window_days: event.target.value })} /></label>
-        </div>
+        </fieldset>
         <div className="execution-package-note"><strong>{tx("安全边界", "Safety boundary")}</strong><span>{realTask.consent_basis}</span><span>{tx("确认只生成手工交接文件，不会调用外部渠道或自动发送。", "Confirmation generates a manual handoff file only; it does not call an external channel or send automatically.")}</span></div>
-        <div className="button-row"><button className="button button-primary" onClick={confirmRealTask}>{realTask.status === "confirmed" ? tx("重新确认参数", "Reconfirm parameters") : tx("人工确认并生成执行包", "Approve and generate package")}</button>{realTask.status === "confirmed" && <button className="button button-ghost" onClick={downloadExecutionPackage}>{tx("下载安全执行包 CSV", "Download safe execution CSV")}</button>}{realTask.status === "confirmed" && realTask.execution?.status !== "in_progress" && <button className="button button-ghost" onClick={startRealTask}>{tx("标记试点已开始", "Mark pilot as started")}</button>}{realTask.execution?.status === "in_progress" && <Link className="button button-ghost" href="/learning">{tx("回传汇总结果", "Submit aggregate results")}</Link>}</div>
+        <div className="button-row">{realTask.execution?.status !== "in_progress" && <button className="button button-primary" disabled={busy} onClick={confirmRealTask}>{realTask.status === "confirmed" ? tx("重新确认参数", "Reconfirm parameters") : tx("人工确认并生成执行包", "Approve and generate package")}</button>}{realTask.status === "confirmed" && <button className="button button-ghost" disabled={busy} onClick={downloadExecutionPackage}>{tx("下载安全执行包 CSV", "Download safe execution CSV")}</button>}{realTask.status === "confirmed" && realTask.execution?.status !== "in_progress" && <button className="button button-ghost" disabled={busy} onClick={startRealTask}>{tx("标记试点已开始", "Mark pilot as started")}</button>}{realTask.execution?.status === "in_progress" && <Link className="button button-ghost" href={taskHref("/learning", realTask.task_id)}>{tx("查看观察期与回填", "View observation window and results")}</Link>}</div>
         {realMessage && <p className="inline-success" role="status">{realMessage}</p>}
         </>}
       </>}

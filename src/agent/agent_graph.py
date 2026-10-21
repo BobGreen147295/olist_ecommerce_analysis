@@ -59,6 +59,9 @@ TOOL_SCHEMA = """
 def _get_llm():
     """按环境变量选择本地 Ollama 或云端 OpenAI 兼容模型。"""
     provider = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
+    if provider == "personal_plus":
+        from .personal_plus import PersonalPlusLLM
+        return PersonalPlusLLM()
     if provider == "ollama":
         from langchain_ollama import ChatOllama
 
@@ -101,7 +104,24 @@ def _model_failure(error: Exception, stage: str) -> dict:
                    "credit_balance_exhausted", "organization_spend_limit_exceeded", "project_spend_limit_exceeded")
     quota_type = getattr(error, "type", None) == "insufficient_quota"
     safe_code = code if code in quota_codes + ("slow_down", "rate_limit_exceeded") else "insufficient_quota" if quota_type else "unclassified"
-    if code in quota_codes or quota_type:
+    if os.environ.get("LLM_PROVIDER") == "personal_plus" and getattr(error, "cause", None) in {
+        "stream_too_large", "output_too_large", "stream_interrupted", "inference_not_completed", "empty_response",
+        "subscription_sharing_usage_limit_exceeded", "subscription_sharing_usage_unavailable",
+        "subscription_sharing_user_not_eligible", "subscription_sharing_unsupported_capability",
+        "subscription_sharing_route_not_supported", "subscription_sharing_user_unavailable",
+        "chatpass_v2_scope_not_authorized", "chatpass_v2_invalid_authorization_context",
+        "provider_http_403", "provider_http_503", "provider_timeout", "provider_network_error",
+    }:
+        safe_code = error.cause
+    if code == "personal_authorization_required":
+        reason, message = "personal_authorization_required", "本机 Plus 授权未连接或已过期，请在本机订阅连接页重新连接；不会切换付费 API。"
+    elif code == "personal_usage_stopped":
+        reason, message = "personal_usage_stopped", "个人 Plus 调用已停止：订阅额度或本机调用保护上限已到；不会充值、重试或回退付费 API。"
+    elif code == "personal_output_limit":
+        reason, message = "personal_output_limit", "本机回复超过安全长度，本次分析停止且不返回半截结论；不会自动重试或切换付费 API。"
+    elif isinstance(code, str) and code.startswith("personal_"):
+        reason, message = "personal_unavailable", "本机 Plus 通道暂不可用，本次停止；请核对本机连接状态，不会切换付费 API。"
+    elif code in quota_codes or quota_type:
         reason, message = "model_quota_exceeded", "模型服务额度或计费上限已到，请维护者核对；不要连续重试。"
     elif status == 401:
         reason, message = "model_authentication_failed", "模型服务认证失败，请维护者核对服务端密钥；不是你的网页登录失效。"

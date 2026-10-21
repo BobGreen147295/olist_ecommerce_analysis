@@ -1,11 +1,12 @@
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.agent.task_store import create_task, prepare_manual_execution, record_observed_result
+from src.agent.task_store import create_task, prepare_manual_execution, record_observed_result, mark_manual_execution_started
 
 
 def test_observed_result_is_owner_scoped_and_aggregate_only() -> None:
@@ -27,6 +28,8 @@ def test_observed_result_is_owner_scoped_and_aggregate_only() -> None:
             control_revenue=1000, cost=200, currency="USD",
             revenue_net_of_refunds=True, path=path, owner="merchant-b",
         ) is None
+        with patch("src.agent.task_store._now", return_value="2026-01-01T00:00:00+00:00"):
+            mark_manual_execution_started(task["task_id"], path=path, owner="merchant-a")
         completed = record_observed_result(
             task["task_id"], treatment_users=100, treatment_orders=20,
             treatment_revenue=2000, control_users=100, control_orders=10,

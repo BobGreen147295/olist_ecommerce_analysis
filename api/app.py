@@ -129,6 +129,10 @@ def _money_amount(value: Any) -> Decimal:
         raise ValueError("Shopify 金额缺失或无效，请补齐后重新同步；缺失金额不会按零处理") from None
 
 
+def _shopify_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncated: bool) -> dict[str, Any]:
     """将瞬时订单节点压缩为按原订单日期汇总，不保留订单或客户标识。"""
     daily: dict[str, dict[str, Decimal | int]] = defaultdict(
@@ -153,6 +157,7 @@ def _shopify_order_trend(nodes: list[dict[str, Any]], window_days: int, truncate
         for date, values in sorted(daily.items())
     ]
     return {
+        "synced_at": _shopify_now().isoformat(timespec="seconds"),
         "window_days": window_days,
         "orders_scanned": sum(day["orders"] for day in days),
         "truncated": truncated,
@@ -200,6 +205,18 @@ def _shopify_opportunity_readiness(summary: Any) -> dict[str, str]:
                 raise ValueError("Inconsistent aggregate amount")
     except (KeyError, TypeError, ValueError, OverflowError):
         return {"state": "insufficient_data", "message": "订单趋势的日期或金额缺失、无效或不一致，请补齐后重新同步；缺失金额不会按零处理。"}
+    try:
+        synced_at = datetime.fromisoformat(trend["synced_at"])
+        if synced_at.tzinfo is None:
+            raise ValueError("Timezone required")
+        synced_at = synced_at.astimezone(timezone.utc)
+        age = _shopify_now() - synced_at
+        if age < -timedelta(minutes=5) or max(dates) > synced_at.date():
+            raise ValueError("Future snapshot or order date")
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return {"state": "sync_required", "message": "缺少有效的同步时间，请手动重新同步；不会使用旧快照生成当前机会。"}
+    if age > timedelta(hours=24):
+        return {"state": "stale_data", "message": "汇总快照超过 24 小时，请手动重新同步后再生成机会；不会自动同步。"}
     return {"state": "ready", "message": "已满足基础数据门槛；确认分析口径后可进入真实机会建模。"}
 
 
@@ -212,19 +229,26 @@ def _shopify_store_opportunities(summary: Any) -> list[dict[str, Any]]:
     normalized = [day for day in days if isinstance(day, dict) and isinstance(day.get("date"), str)]
     if not normalized:
         return []
-    end = max(datetime.fromisoformat(day["date"]).date() for day in normalized)
+    # Compare complete UTC days, including genuinely zero-order days. Never
+    # anchor "recent" to the last sale or compare a partial day to full days.
+    synced_at = datetime.fromisoformat(trend["synced_at"]).astimezone(timezone.utc)
+    end = synced_at.date() - timedelta(days=1)
+    normalized = [day for day in normalized if datetime.fromisoformat(day["date"]).date() <= end]
+    if not normalized:
+        return []
     recent_start, previous_start = end - timedelta(days=6), end - timedelta(days=13)
     recent = [day for day in normalized if recent_start <= datetime.fromisoformat(day["date"]).date() <= end]
     previous = [day for day in normalized if previous_start <= datetime.fromisoformat(day["date"]).date() < recent_start]
     recent_net = round(sum(float(day.get("net_sales") or 0) for day in recent), 2)
     previous_net = round(sum(float(day.get("net_sales") or 0) for day in previous), 2)
-    totals = trend.get("totals") if isinstance(trend.get("totals"), dict) else {}
-    gross_sales, refunds = float(totals.get("gross_sales") or 0), float(totals.get("refunds") or 0)
+    gross_sales = sum(float(day["gross_sales"]) for day in normalized)
+    refunds = sum(float(day["refunds"]) for day in normalized)
     provenance = {"currency": summary.get("currency_code") or "unknown", "window_days": trend.get("window_days"),
-                  "observed_start": min(day["date"] for day in normalized), "observed_end": end.isoformat(), "truncated": False}
+                  "observed_start": min(day["date"] for day in normalized), "observed_end": end.isoformat(), "truncated": False,
+                  "synced_at": trend["synced_at"], "timezone": "UTC"}
     signals: list[dict[str, Any]] = []
     if previous_net > 0 and recent_net < previous_net * 0.8:
-        signals.append({"id": "net_sales_decline", "title": "近 7 天净销售额下滑", "summary": f"近 7 天净销售额 {recent_net:.2f}，较此前 7 天的 {previous_net:.2f} 下降超过 20%。", "evidence": {"recent_net_sales": recent_net, "previous_net_sales": previous_net}, "provenance": {**provenance, "recent_start": recent_start.isoformat(), "previous_start": previous_start.isoformat()}})
+        signals.append({"id": "net_sales_decline", "title": f"截至 {end.isoformat()} 的 7 天订单金额下滑", "summary": f"截至 {end.isoformat()}（UTC）的 7 个完整自然日订单当前总额 {recent_net:.2f}，较此前 7 天的 {previous_net:.2f} 下降超过 20%；不是净利润。", "evidence": {"recent_net_sales": recent_net, "previous_net_sales": previous_net}, "provenance": {**provenance, "recent_start": recent_start.isoformat(), "previous_start": previous_start.isoformat()}})
     if gross_sales > 0 and refunds / gross_sales >= 0.1:
         signals.append({"id": "refund_pressure", "title": "退款/订单调整占比偏高", "summary": f"已同步期间退款/订单调整额 {refunds:.2f}，占销售额 {refunds / gross_sales:.1%}。", "evidence": {"gross_sales": round(gross_sales, 2), "refunds": round(refunds, 2)}, "provenance": provenance})
     return signals
@@ -300,7 +324,7 @@ def _cors(response: Any) -> Any:
     if origin and origin in _allowed_origins():
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
@@ -415,12 +439,19 @@ def _shopify_readiness() -> dict[str, Any]:
     }
 
 
+class SessionAuthenticationError(ValueError):
+    """Keep authentication failures distinct from invalid business input."""
+
+
 def _require_session() -> dict[str, str]:
     header = request.headers.get("Authorization", "")
     if not header.startswith("Bearer "):
-        raise ValueError("请先登录后再连接店铺")
+        raise SessionAuthenticationError("请先登录后再连接店铺")
     from src.agent.auth_session_store import get_session
-    return get_session(header.removeprefix("Bearer ").strip())
+    try:
+        return get_session(header.removeprefix("Bearer ").strip())
+    except ValueError as exc:
+        raise SessionAuthenticationError("登录已失效，请重新登录") from exc
 
 
 def _shopify_callback_url() -> str:
@@ -438,6 +469,8 @@ def _shopify_hmac_is_valid(arguments: dict[str, str]) -> bool:
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["JSON_AS_ASCII"] = False
+    from api.commerce_reviews import commerce_reviews
+    app.register_blueprint(commerce_reviews(_require_session, SessionAuthenticationError))
 
     @app.after_request
     def add_cors(response: Any) -> Any:
@@ -614,7 +647,7 @@ def create_app() -> Flask:
             }
             return jsonify({"authorization_url": f"https://{shop_domain.strip().lower()}/admin/oauth/authorize?{urlencode(parameters)}"})
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except RuntimeError:
             app.logger.exception("Shopify authorization initialization failed")
             return jsonify({"error": "授权服务暂不可用"}), 503
@@ -657,20 +690,21 @@ def create_app() -> Flask:
             return "", 204
         try:
             session = _require_session()
+        except ValueError:
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        except Exception:
+            return jsonify({"error": "认证服务暂不可用"}), 503
+        try:
             from src.agent.merchant_connection_store import get_shopify_connection_status
             connection = get_shopify_connection_status(session["username"])
-            # 旧版同步在保存趋势前失败时，已存在的安全汇总会一直显示，
-            # 但没有机会自动补齐。仅当趋势缺失时，在仪表盘读取状态时做一次
-            # 与手动“重新同步”完全相同的只读补齐；成功后立即重新读取状态。
-            if connection and isinstance(connection.get("summary"), dict) and "order_trend" not in connection["summary"]:
-                sync_shopify()
-                connection = get_shopify_connection_status(session["username"])
+            # Status reads never fetch shop data or silently repair an old snapshot.
+            # Missing/partial/stale data is disclosed; only explicit POST sync refreshes it.
             if connection:
                 connection["opportunity_readiness"] = _shopify_opportunity_readiness(connection.get("summary"))
                 connection["store_opportunities"] = _shopify_store_opportunities(connection.get("summary"))
             return jsonify({"connection": connection})
-        except (ValueError, RuntimeError):
-            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        except Exception:
+            return jsonify({"error": "店铺状态服务暂不可用；未自动同步，请稍后重试。"}), 503
 
     @app.route("/v1/integrations/shopify", methods=["DELETE", "OPTIONS"])
     def delete_shopify_integration() -> Any:
@@ -790,7 +824,7 @@ def create_app() -> Flask:
             synced_connection["store_opportunities"] = _shopify_store_opportunities(synced_connection.get("summary"))
             return jsonify({"connection": synced_connection})
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except requests.RequestException as exc:
             # Log only allowlisted diagnostics, never the exception, URL, token or response body.
             status = exc.response.status_code if exc.response is not None else None
@@ -821,9 +855,38 @@ def create_app() -> Flask:
             task = create_task(draft, source_diagnosis=draft["source_diagnosis"], owner=session["username"])
             return jsonify({"task": task}), 201
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
+
+    @app.get("/v1/reports/order-comparison")
+    def order_comparison() -> Any:
+        """Read aggregate evidence without routing through the Agent or its quota."""
+        try:
+            service_key = request.headers.get("X-Research-Report-Key", "")
+            if service_key:
+                expected = os.environ.get("RESEARCH_REPORT_KEY", "")
+                owner = os.environ.get("RESEARCH_REPORT_OWNER", "")
+                # ponytail: one explicitly configured local owner; hosted/multi-tenant
+                # use must retain normal account sessions, not broaden this bridge.
+                if (os.environ.get("PERSONAL_PLUS_LOCAL") != "1" or os.environ.get("RENDER")
+                        or request.remote_addr not in ("127.0.0.1", "::1") or request.headers.get("Origin")
+                        or len(expected) < 32 or not expected.isascii() or not service_key.isascii()
+                        or not hmac.compare_digest(service_key, expected)
+                        or not owner or owner != os.environ.get("APP_ADMIN_USERNAME")):
+                    raise SessionAuthenticationError("数据连接验证失败")
+            else:
+                owner = _require_session()["username"]
+            if request.args:
+                return jsonify(error="该报告不接受账户或自定义查询参数"), 400
+            from src.agent.order_trend_report import order_trend_report
+            response = jsonify(report=order_trend_report(owner=owner)["report"])
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except SessionAuthenticationError:
+            return jsonify(error="请登录或检查本机只读数据连接"), 401
+        except Exception:
+            return jsonify(error="订单数据服务暂不可用"), 503
 
     @app.route("/v1/chat", methods=["POST", "OPTIONS"])
     def chat() -> Any:
@@ -843,6 +906,12 @@ def create_app() -> Flask:
             return jsonify({"error": "message 是必填字符串"}), 400
         if len(message) > MAX_MESSAGE_LENGTH:
             return jsonify({"error": f"message 最多 {MAX_MESSAGE_LENGTH} 个字符"}), 400
+        from src.agent.order_trend_report import report_language, order_trend_report
+        # An explicit read-only report is not an AI call. Authentication above
+        # still applies; free-text questions retain the existing quota/Agent path.
+        report_english = report_language(message)
+        if report_english is not None:
+            return jsonify(order_trend_report(owner=session["username"], english=report_english))
         from src.agent.chat_usage_store import ChatLimitExceeded, reserve_chat_call
         try:
             reserve_chat_call(session["username"])
@@ -917,7 +986,7 @@ def create_app() -> Flask:
             task = create_task(_reactivation_signal_draft(signal), source_diagnosis={"source": "consented_reactivation_aggregate"}, owner=session["username"])
             return jsonify({"task": task}), 201
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
@@ -934,6 +1003,26 @@ def create_app() -> Flask:
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
+    @app.route("/v1/tasks/<task_id>/diagnostic-review", methods=["POST", "OPTIONS"])
+    def review_store_diagnosis(task_id: str) -> Any:
+        if request.method == "OPTIONS": return "", 204
+        try:
+            session = _require_session()
+        except ValueError:
+            return jsonify({"error": "登录已失效，请重新登录"}), 401
+        try:
+            from src.agent.task_store import record_diagnostic_review
+            payload = request.get_json(silent=True) or {}
+            if not isinstance(payload, dict) or set(payload) != {"decision"} or not isinstance(payload["decision"], str):
+                raise ValueError("只接收结构化决定，不接收客户或订单资料")
+            task = record_diagnostic_review(task_id, payload["decision"], owner=session["username"])
+            if task is None: return jsonify({"error": "未找到当前账户的诊断任务"}), 404
+            return jsonify({"task": task})
+        except (TypeError, ValueError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError:
+            return jsonify({"error": "诊断反馈服务暂不可用，请稍后重试"}), 503
+
     @app.route("/v1/tasks/<task_id>/confirm", methods=["POST", "OPTIONS"])
     def confirm_task_execution(task_id: str) -> Any:
         if request.method == "OPTIONS":
@@ -945,17 +1034,17 @@ def create_app() -> Flask:
             task = prepare_manual_execution(
                 task_id,
                 channel=payload.get("channel", ""),
-                budget=float(payload.get("budget", 0)),
+                budget=payload.get("budget", 0),
                 market=payload.get("market", "GLOBAL"),
                 locale=payload.get("locale", "en"),
-                attribution_window_days=int(payload.get("attribution_window_days", 7)),
+                attribution_window_days=payload.get("attribution_window_days", 7),
                 owner=session["username"],
             )
             if task is None:
                 return jsonify({"error": "未找到当前账号的活动草案"}), 404
             return jsonify({"task": task})
         except (TypeError, ValueError) as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
@@ -979,7 +1068,7 @@ def create_app() -> Flask:
                 headers={"Content-Disposition": f'attachment; filename="revenueops-{task_id}-execution-package.csv"'},
             )
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 
@@ -995,7 +1084,7 @@ def create_app() -> Flask:
                 return jsonify({"error": "未找到当前账号的活动草案"}), 404
             return jsonify({"task": task})
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
+            return jsonify({"error": str(exc)}), 401 if isinstance(exc, SessionAuthenticationError) else 400
         except RuntimeError:
             return jsonify({"error": "任务服务暂不可用，请稍后重试"}), 503
 

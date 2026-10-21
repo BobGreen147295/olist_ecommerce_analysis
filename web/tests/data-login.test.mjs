@@ -17,10 +17,11 @@ function setup(overrides = {}) {
   const state = { error: '', busy: [], token: '', password: 'synthetic-password', stored: null };
   const context = {
     isLoggingIn: false, API_BASE_URL: 'https://example.invalid', username: 'synthetic-user', password: state.password,
-    tx: (zh) => zh,
+    tx: (zh) => zh, AbortSignal,
     setConnectionError: (value) => { state.error = value; },
     setIsLoggingIn: (value) => { state.busy.push(value); },
     setAccessToken: (value) => { state.token = value; },
+    setShopifyConnection: () => {},
     setPassword: (value) => { state.password = value; },
     sessionStorage: { setItem: (key, value) => { state.stored = { key, value }; } },
     fetch: async () => ({ ok: true, json: async () => ({ access_token: 'synthetic-token' }) }),

@@ -3,8 +3,9 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowUp, X } from "@phosphor-icons/react";
 import { useI18n } from "./I18n";
+import { OrderComparisonCard } from "./OrderComparisonCard";
 
-type Message = { role: "assistant" | "user"; content: string };
+type Message = { role: "assistant" | "user"; content: string; report?: unknown };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_REVENUEOPS_API_URL?.replace(/\/$/, "");
 
@@ -37,7 +38,7 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
       setMessages([]);
     }
   }, [open]);
-  const [agentMode, setAgentMode] = useState<"demo" | "agent" | "knowledge" | "unavailable">(API_BASE_URL ? "agent" : "demo");
+  const [agentMode, setAgentMode] = useState<"demo" | "ready" | "agent" | "knowledge" | "data" | "unavailable">(API_BASE_URL ? "ready" : "demo");
   async function send(event: FormEvent) {
     event.preventDefault();
     const question = draft.trim();
@@ -72,8 +73,8 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
         return;
       }
       if (!response.ok || !payload.answer) throw new Error(payload.error || "Agent 请求失败");
-      setAgentMode(payload.error || payload.mode === "unavailable" ? "unavailable" : payload.mode === "knowledge" ? "knowledge" : "agent");
-      setMessages((current) => [...current, { role: "assistant", content: payload.answer }]);
+      setAgentMode(payload.mode === "data" ? "data" : payload.error || payload.mode === "unavailable" ? "unavailable" : payload.mode === "knowledge" ? "knowledge" : "agent");
+      setMessages((current) => [...current, { role: "assistant", content: payload.answer, report: payload.mode === "data" ? payload.report : undefined }]);
     } catch {
       if (sessionStorage.getItem("revenueops_access_token") !== token) return;
       setAgentMode("unavailable");
@@ -82,13 +83,13 @@ export function CopilotPanel({ open, onClose }: { open: boolean; onClose: () => 
       setIsLoading(false);
     }
   }
-  const visibleMessages = messages.length ? messages : [{ role: "assistant" as const, content: tx("我是 RevenueOps AI Co-pilot。我可以解释当前机会、活动实验和数据缺口；所有建议均需人工确认，不会自动触达客户。", "I am the RevenueOps AI Co-pilot. I can explain current opportunities, experiments, and data gaps. Every recommendation requires human approval; no customer is contacted automatically.") }];
+  const visibleMessages: Message[] = messages.length ? messages : [{ role: "assistant" as const, content: tx("我是 RevenueOps AI Co-pilot。我可以解释当前机会、活动实验和数据缺口；所有建议均需人工确认，不会自动触达客户。", "I am the RevenueOps AI Co-pilot. I can explain current opportunities, experiments, and data gaps. Every recommendation requires human approval; no customer is contacted automatically.") }];
   return <><button className={`copilot-scrim ${open ? "copilot-visible" : ""}`} onClick={onClose} aria-label={tx("关闭 AI 对话", "Close AI chat")} /><aside className={`copilot-panel ${open ? "copilot-open" : ""}`} aria-label="AI Co-pilot">
-    <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>{tx("运营智能问答", "Operations intelligence")}</h2><span><i /> {agentMode === "agent" ? tx("服务端 Agent · 人工可控", "Live Agent · Human controlled") : agentMode === "knowledge" ? tx("方法说明 · 非店铺分析", "Method guidance · Not store analysis") : agentMode === "demo" ? tx("示例推理 · 人工可控", "Demo reasoning · Human controlled") : tx("本次分析未完成 · 未自动执行", "Analysis incomplete · No automatic action")}</span></div><button onClick={onClose} aria-label={tx("关闭", "Close")}><X size={18} aria-hidden /></button></header>
+    <header className="copilot-header"><div><p className="eyebrow">AI Co-pilot</p><h2>{tx("运营智能问答", "Operations intelligence")}</h2><span role="status"><i /> {agentMode === "ready" ? tx("可提问 · 尚未执行分析", "Ready for a question · No analysis yet") : agentMode === "data" ? tx("数据核对 · 未调用模型", "Data check · No model call") : agentMode === "agent" ? tx("服务端 Agent · 人工可控", "Live Agent · Human controlled") : agentMode === "knowledge" ? tx("方法说明 · 非店铺分析", "Method guidance · Not store analysis") : agentMode === "demo" ? tx("示例推理 · 人工可控", "Demo reasoning · Human controlled") : tx("本次分析未完成 · 未自动执行", "Analysis incomplete · No automatic action")}</span></div><button onClick={onClose} aria-label={tx("关闭", "Close")}><X size={18} aria-hidden /></button></header>
     <div className="copilot-context">{API_BASE_URL ? tx("仅查询当前登录账户已授权的数据；未登录时不会读取经营数据。", "Only the signed-in account's authorized data is queried; no business data is read when signed out.") : tx("当前为合成演示，不读取真实店铺数据。", "Synthetic demo only. No real store data is read.")}<br />{tx("可用范围以服务端实际返回为准；缺少数据时不补造经营结论。", "Available scope depends on server results. Missing data is not replaced with invented conclusions.")}</div>
-    <div className="copilot-messages">{visibleMessages.map((message, index) => <div key={`${message.role}-${index}`} className={`copilot-message ${message.role}`}><span>{message.role === "assistant" ? "AI" : tx("你", "You")}</span><p>{message.content}</p></div>)}</div>
-    <div className="copilot-prompts"><button onClick={() => setDraft(tx("为什么要先做流失客户召回？", "Why prioritize churn reactivation?"))}>{tx("为什么先做流失召回？", "Why start with churn?")}</button><button onClick={() => setDraft(tx("当前 ROI 可以相信吗？", "Can I trust the current ROI?"))}>{tx("当前 ROI 可以相信吗？", "Can I trust this ROI?")}</button><button onClick={() => setDraft(tx("还缺哪些数据连接？", "Which data connections are missing?"))}>{tx("还缺哪些数据？", "What data is missing?")}</button></div>
+    <div className="copilot-messages">{visibleMessages.map((message, index) => <div key={`${message.role}-${index}`} className={`copilot-message ${message.role}`}><span>{message.role === "assistant" ? message.report ? tx("数据", "Data") : "AI" : tx("你", "You")}</span>{message.report ? <OrderComparisonCard report={message.report} fallback={message.content} english={english} /> : <p>{message.content}</p>}</div>)}</div>
+    <div className="copilot-prompts">{API_BASE_URL && <button disabled={isLoading} onClick={() => setDraft(tx("核对近两期订单金额变化（不调用模型）", "Compare order amounts for the last two periods (no model call)"))}>{tx("核对近两期金额 · 不用模型", "Compare two periods · No model")}</button>}<button onClick={() => setDraft(tx("为什么要先做流失客户召回？", "Why prioritize churn reactivation?"))}>{tx("为什么先做流失召回？", "Why start with churn?")}</button><button onClick={() => setDraft(tx("当前 ROI 可以相信吗？", "Can I trust the current ROI?"))}>{tx("当前 ROI 可以相信吗？", "Can I trust this ROI?")}</button><button onClick={() => setDraft(tx("还缺哪些数据连接？", "Which data connections are missing?"))}>{tx("还缺哪些数据？", "What data is missing?")}</button></div>
     <form className="copilot-compose" onSubmit={send}><textarea aria-label={tx("运营问题", "Operations question")} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={tx("问一个运营问题…", "Ask an operations question…")} rows={2} /><button type="submit" disabled={isLoading}>{isLoading ? tx("分析中…", "Analyzing…") : <><span>{tx("发送", "Send")}</span><ArrowUp size={16} aria-hidden /></>}</button></form>
-    <p className="copilot-disclaimer">{agentMode === "agent" ? tx("回答由服务端 Agent 生成，仍需人工复核后执行。", "Answers come from the live Agent and still require human review before action.") : agentMode === "knowledge" ? tx("这是审核过的方法说明，未调用模型，也未核实店铺经营数据。", "Reviewed method guidance. No model call or store-data verification was performed.") : agentMode === "unavailable" ? tx("本次分析未完成，没有自动执行；方法资料不代表店铺结论。", "Analysis was not completed; no automatic action was taken. Method references are not store conclusions.") : tx("回答基于示例数据，不构成真实经营结论或自动执行指令。", "Answers use demo data and are not real business conclusions or automatic instructions.")}</p>
+    <p className="copilot-disclaimer">{agentMode === "ready" ? tx("模型问答受账户权限与额度限制；订单趋势核对不调用模型。", "Model answers depend on account access and quota. The order-trend check does not call a model.") : agentMode === "data" ? tx("这是按固定口径查询的订单汇总，不调用模型、不消耗 AI 调用额度。数据缺失或查询失败时不会替代生成建议。", "Fixed-definition order aggregates. No model call or AI quota used. Missing data or failed queries are not replaced with advice.") : agentMode === "agent" ? tx("回答由服务端 Agent 生成，仍需人工复核后执行。", "Answers come from the live Agent and still require human review before action.") : agentMode === "knowledge" ? tx("这是审核过的方法说明，未调用模型，也未核实店铺经营数据。", "Reviewed method guidance. No model call or store-data verification was performed.") : agentMode === "unavailable" ? tx("本次分析未完成，没有自动执行；方法资料不代表店铺结论。", "Analysis was not completed; no automatic action was taken. Method references are not store conclusions.") : tx("回答基于示例数据，不构成真实经营结论或自动执行指令。", "Answers use demo data and are not real business conclusions or automatic instructions.")}</p>
   </aside></>;
 }

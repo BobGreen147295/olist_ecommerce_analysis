@@ -6,6 +6,8 @@
 - 免费试点：[申请 7 天只读诊断](https://olist-revenueops.pages.dev/pilot)
 - 当前阶段：首批真实商家试点
 
+商家经营复盘入口为 `/reviews`：沿用当前账户，核对订单汇总，结合「跨境 AI 观察」资料主动解读，人工采纳检查并回填/导出。该整合先在本机合成数据验收，生产需单独配置研究服务并验证。见 [整合说明](docs/commerce-research-integration.md)。
+
 > 仓库名和线上域名中的 `olist` 是早期项目留下的兼容标识。当前分支不再分发或在界面展示 Olist 数据集；保留这些地址是为了避免中断 Cloudflare、Render 和 Shopify OAuth 回调。
 
 ## 产品流程
