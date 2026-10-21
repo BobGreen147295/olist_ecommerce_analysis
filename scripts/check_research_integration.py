@@ -32,7 +32,7 @@ def check(base, token):
         if authenticated:
             headers["Authorization"] = "Bearer " + token
         try:
-            with opener.open(Request(base.rstrip("/") + path, headers=headers), timeout=20) as response:
+            with opener.open(Request(base.rstrip("/") + path, headers=headers), timeout=90) as response:
                 raw = response.read(1024 * 1024 + 1)
                 if len(raw) > 1024 * 1024:
                     raise CheckFailed("response_too_large")

@@ -53,7 +53,8 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
     const current = () => sessionStorage.getItem(sessionKey) === session;
     if (!current()) { onSessionChange(sessionStorage.getItem(sessionKey)); throw new Error("账户已切换 / Account changed"); }
     let response: Response;
-    try { response = await fetch(api + "/v1/commerce" + path, { method, cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
+    const timeout = AbortSignal.timeout(method === "GET" ? 90_000 : 20_000);
+    try { response = await fetch(api + "/v1/commerce" + path, { method, cache: "no-store", signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session}` }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) }); }
     catch { throw new Error("连接未完成，请重试；已保存的复盘不会因此删除 / Connection failed. Retry; saved reviews are retained."); }
     const data = response.status === 204 ? {} : await response.json().catch(() => null);
@@ -125,7 +126,7 @@ function ReviewWorkspace({ session, onSessionChange }: { session: string; onSess
   return <>
       <section className="review-connection" aria-label={tx("复盘服务连接", "Review service connection")} aria-busy={loading}>
         <div><h2>{loading ? tx("正在检查复盘连接", "Checking review connection") : connection === "ready" ? tx("复盘连接已确认", "Review connection checked") : tx("复盘连接尚未就绪", "Review connection is not ready")}</h2>
-          <p>{loading ? tx("只读取连接与记录，不调用模型。", "Reads connection and history without calling a model.") : connection === "ready" ? aiAccess ? tx("当前账户可保存复盘，AI 解读需主动生成。", "Your account can save reviews. AI runs only when requested.") : tx("当前账户可进行人工复盘，AI 解读尚未开放。", "Manual reviews are available. AI is not enabled for this account.") : tx("可能尚未配置或暂时断开。已保存记录不会因此删除，也不能据此判断没有历史复盘。", "The service may be unconfigured or temporarily unreachable. Saved reviews remain; this does not mean your history is empty.")}</p></div>
+          <p>{loading ? tx("首次连接可能稍慢，最多等待 90 秒。只读取连接与记录，不调用模型。", "The first connection can take longer. We wait up to 90 seconds, reading history without calling a model.") : connection === "ready" ? aiAccess ? tx("当前账户可保存复盘，AI 解读需主动生成。", "Your account can save reviews. AI runs only when requested.") : tx("当前账户可进行人工复盘，AI 解读尚未开放。", "Manual reviews are available. AI is not enabled for this account.") : tx("可能尚未配置或暂时断开。已保存记录不会因此删除，也不能据此判断没有历史复盘。", "The service may be unconfigured or temporarily unreachable. Saved reviews remain; this does not mean your history is empty.")}</p></div>
         <div className="review-buttons"><button className="button button-ghost" disabled={busy || loading} onClick={() => { setLoading(true); reconnect(n => n + 1); }}>{tx("重新检查连接", "Recheck connection")}</button><Link className="button button-ghost" href="/data">{tx("前往数据页核对订单", "Check orders on Data connections")}</Link></div>
       </section>
       <div className="review-toolbar"><p>{tx("核对和保存不消耗 AI 额度；不会同步店铺或执行营销。", "Checks and manual records use no AI quota and do not sync or change your store.")}</p><button className="button button-primary" disabled={busy || loading || connection !== "ready"} onClick={() => void act(check)}>{busy ? tx("处理中…", "Working…") : tx("核对订单数据", "Check order data")}</button></div>

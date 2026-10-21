@@ -12,9 +12,10 @@ function setup({ token = 'account-a', changedBefore = false, changedAfter = fals
     ts.forEachChild(node, visit);
   }
   visit(source); assert.ok(request);
-  const state = { token: changedBefore ? 'account-b' : token, calls: [], sessionChanged: undefined };
+  const state = { token: changedBefore ? 'account-b' : token, calls: [], timeouts: [], sessionChanged: undefined };
   const javascript = ts.transpileModule(`const request = ${request}; request;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const run = vm.runInNewContext(javascript, { session: token, api: 'https://merchant.example', sessionKey: 'revenueops_access_token', AbortSignal,
+  const run = vm.runInNewContext(javascript, { session: token, api: 'https://merchant.example', sessionKey: 'revenueops_access_token',
+    AbortSignal: { any: AbortSignal.any, timeout: ms => { state.timeouts.push(ms); return AbortSignal.timeout(ms); } },
     sessionStorage: { getItem: () => state.token, removeItem: () => { state.token = null; } },
     onSessionChange: next => { state.sessionChanged = next; },
     fetch: async (url, options) => { state.calls.push({ url, options }); if (changedAfter) state.token = 'account-b'; if (offline) throw new TypeError('Failed to fetch'); return { status, ok: status === 200, json: async () => { if (invalidJSON) throw new SyntaxError('private HTML response'); return { reviews: ['private-account-a'], error: 'service unavailable' }; } }; },
@@ -28,6 +29,14 @@ test('review requests require the current session, forward only its bearer and n
   assert.equal(active.state.calls[0].options.headers.Authorization, 'Bearer account-a');
   assert.equal(active.state.calls[0].options.headers['X-Commerce-Owner'], undefined);
   assert.equal(result.reviews[0], 'private-account-a');
+});
+test('cold reads allow a bounded startup wait; model and write requests are sent once with the shorter deadline', async () => {
+  const read = setup(); await read.run(''); assert.deepEqual(read.state.timeouts, [90000]); assert.equal(read.state.calls.length, 1);
+  for (const method of ['POST', 'PATCH', 'DELETE']) {
+    const write = setup(); await write.run('/reviews/synthetic-id/assistant', method, {});
+    assert.deepEqual(write.state.timeouts, [20000]); assert.equal(write.state.calls.length, 1);
+  }
+  const failed = setup({ offline: true }); await assert.rejects(failed.run('', 'POST', {})); assert.equal(failed.state.calls.length, 1);
 });
 test('account switching before or during a request discards the old private result', async () => {
   for (const option of [{ changedBefore: true }, { changedAfter: true }]) {
